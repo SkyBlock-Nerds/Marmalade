@@ -39,18 +39,18 @@ public class RepositoryManager {
     }
 
     public void registerRepositoriesFromPackage(String packageName, MongoClient mongoClient, String databaseName) throws RepositoryException {
-        log.info("Registering repositories from package: " + packageName);
+        log.info("Registering repositories from package: {}", packageName);
 
         try {
             Set<Class<?>> classes = ReflectionUtils.findClasses(packageName, Repository.class);
 
             for (Class<?> clazz : classes) {
-                log.debug("Found class: " + clazz.getName());
+                log.debug("Found class: {}", clazz.getName());
 
                 if (isRepository(clazz) && !repositories.containsKey(clazz)) {
                     Object repositoryInstance = createRepositoryInstance(clazz, mongoClient, databaseName);
                     repositories.put(clazz, repositoryInstance);
-                    log.info("Registered repository: " + clazz.getName());
+                    log.info("Registered repository: {}", clazz.getName());
                 }
             }
         } catch (Exception exception) {

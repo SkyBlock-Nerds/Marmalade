@@ -39,12 +39,12 @@ public class DiscordUserRepository extends Repository<DiscordUser> {
             CompletableFuture.runAsync(() -> {
                 getAll().forEach(discordUser -> {
                     if (discordUser.getLastActivity() == null) {
-                        log.info("Last activity for " + discordUser.getDiscordId() + " was null. Setting to default values!");
+                        log.info("Last activity for {} was null. Setting to default values!", discordUser.getDiscordId());
                         discordUser.setLastActivity(new LastActivity());
                     }
 
                     if (discordUser.getBirthdayData() == null) {
-                        log.info("Birthday data for " + discordUser.getDiscordId() + " was null. Setting to default values!");
+                        log.info("Birthday data for {} was null. Setting to default values!", discordUser.getDiscordId());
                         discordUser.setBirthdayData(new BirthdayData());
                     }
 

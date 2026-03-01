@@ -49,7 +49,7 @@ public class DiscordUser {
 
     public void setBirthday(Date birthday) {
         if (birthdayData == null) {
-            log.debug("Creating new birthday data for " + discordId);
+            log.debug("Creating new birthday data for {}", discordId);
             birthdayData = new BirthdayData();
         }
 
@@ -69,7 +69,7 @@ public class DiscordUser {
         calendar.set(Calendar.MINUTE, 0);
         calendar.set(Calendar.HOUR_OF_DAY, 0);
 
-        log.info("Setting birthday for " + discordId + " to " + calendar.getTime());
+        log.info("Setting birthday for {} to {}", discordId, calendar.getTime());
 
         birthdayData.setBirthday(calendar.getTime());
     }
@@ -80,7 +80,7 @@ public class DiscordUser {
 
     public boolean addBadge(TieredBadge badge, int tier) {
         badges.removeIf(badgeEntry -> badgeEntry.badgeId().equals(badge.getId()));
-        log.debug("Removed existing tiered badge for " + discordId + " with ID " + badge.getId() + " and tier " + tier);
+        log.debug("Removed existing tiered badge for {} with ID {} and tier {}", discordId, badge.getId(), tier);
 
         if (tier > 0 && tier <= badge.getTiers().size()) {
             return badges.add(new BadgeEntry(badge.getId(), tier));

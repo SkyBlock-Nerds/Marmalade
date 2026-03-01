@@ -15,7 +15,19 @@ import java.util.UUID;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class DataSerialization {
 
+    /**
+     * GSON instance for compact output operations.
+     */
     public static final Gson GSON = new GsonBuilder()
+        .registerTypeAdapter(UUID.class, new UUIDTypeAdapter())
+        .registerTypeAdapter(Instant.class, new InstantTypeAdapter())
+        .registerTypeAdapter(Badge.class, new BadgeTypeAdapter())
+        .create();
+
+    /**
+     * GSON instance for human-readable output (config files, debug, etc.).
+     */
+    public static final Gson PRETTY_GSON = new GsonBuilder()
         .setPrettyPrinting()
         .registerTypeAdapter(UUID.class, new UUIDTypeAdapter())
         .registerTypeAdapter(Instant.class, new InstantTypeAdapter())

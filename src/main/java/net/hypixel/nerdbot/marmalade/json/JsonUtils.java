@@ -59,7 +59,7 @@ public final class JsonUtils {
 
     public static void writeJsonFile(String filename, JsonObject jsonObject) {
         try (Writer writer = Files.newBufferedWriter(Path.of(filename), StandardCharsets.UTF_8)) {
-            DataSerialization.GSON.toJson(jsonObject, writer);
+            DataSerialization.PRETTY_GSON.toJson(jsonObject, writer);
         } catch (IOException exception) {
             log.error("Failed to write json file: {}", filename, exception);
         }
@@ -68,7 +68,7 @@ public final class JsonUtils {
     public static CompletableFuture<Void> writeJsonFileAsync(String filename, JsonObject jsonObject) {
         return CompletableFuture.runAsync(() -> {
             try (Writer writer = Files.newBufferedWriter(Path.of(filename), StandardCharsets.UTF_8)) {
-                DataSerialization.GSON.toJson(jsonObject, writer);
+                DataSerialization.PRETTY_GSON.toJson(jsonObject, writer);
             } catch (IOException exception) {
                 log.error("Failed to write json file: {}", filename, exception);
                 throw new RuntimeException("Failed to write json file: " + filename, exception);
@@ -143,7 +143,7 @@ public final class JsonUtils {
         try {
             return convertObjectToMap(JsonParser.parseString(json).getAsJsonObject());
         } catch (JsonParseException exception) {
-            log.error("Failed to parse json string to map: " + json, exception);
+            log.warn("Failed to parse json string to map: {}", json, exception);
             return Collections.emptyMap();
         }
     }
@@ -152,7 +152,7 @@ public final class JsonUtils {
         try {
             return JsonParser.parseString(json);
         } catch (JsonParseException exception) {
-            log.error("Failed to parse json string: " + json, exception);
+            log.warn("Failed to parse json string: {}", json, exception);
             return null;
         }
     }
