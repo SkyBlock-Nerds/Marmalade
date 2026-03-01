@@ -64,7 +64,7 @@ public abstract class Repository<T> {
         Caffeine<Object, Object> builder = Caffeine.newBuilder();
 
         if (expireAfterAccess > 0 && timeUnit != null) {
-            log("Documents in this repository will expire after " + expireAfterAccess + " " + timeUnit.toString().toLowerCase());
+            log("Documents in this repository will expire after {} {}", expireAfterAccess, timeUnit.toString().toLowerCase());
             builder.expireAfterAccess(expireAfterAccess, timeUnit)
                 .scheduler(Scheduler.systemScheduler());
         } else {
@@ -73,7 +73,7 @@ public abstract class Repository<T> {
 
         this.cache = builder
             .removalListener((String key, T value, RemovalCause cause) -> {
-                debug("Removing document with ID " + key + " from cache for reason " + cause);
+                debug("Removing document with ID {} from cache for reason {}", key, cause);
 
                 if (cause != RemovalCause.EXPLICIT && cause != RemovalCause.REPLACED) {
                     saveToDatabase(value);
@@ -96,7 +96,7 @@ public abstract class Repository<T> {
             }
 
             if (cache.getIfPresent(id) != null) {
-                debug("Document with ID " + id + " already exists in cache");
+                debug("Document with ID {} already exists in cache", id);
                 continue;
             }
 
@@ -123,7 +123,7 @@ public abstract class Repository<T> {
                         }
 
                         if (cache.getIfPresent(getId(object)) != null) {
-                            debug("Document with ID " + getId(object) + " already exists in cache");
+                            debug("Document with ID {} already exists in cache", getId(object));
                             return;
                         }
 
@@ -164,7 +164,7 @@ public abstract class Repository<T> {
     public T findById(String id) {
         T cachedObject = cache.getIfPresent(id);
         if (cachedObject != null) {
-            debug("Found document with ID " + id + " in cache");
+            debug("Found document with ID {} in cache", id);
             return cachedObject;
         }
 
@@ -177,11 +177,11 @@ public abstract class Repository<T> {
                 return object;
             }
         } catch (MongoException e) {
-            log.error("Error finding document with ID " + id, e);
+            log.error("Error finding document with ID {}", id, e);
             return null;
         }
 
-        debug("Could not find document with ID " + id + " in cache or database");
+        debug("Could not find document with ID {} in cache or database", id);
         return null;
     }
 
@@ -189,7 +189,7 @@ public abstract class Repository<T> {
         return CompletableFuture.supplyAsync(() -> {
             T cachedObject = cache.getIfPresent(id);
             if (cachedObject != null) {
-                debug("Found document with ID " + id + " in cache");
+                debug("Found document with ID {} in cache", id);
                 return cachedObject;
             }
 
@@ -201,7 +201,7 @@ public abstract class Repository<T> {
                 return object;
             }
 
-            debug("Could not find document with ID " + id + " in cache or database");
+            debug("Could not find document with ID {} in cache or database", id);
             return null;
         }, repositoryExecutor);
     }
@@ -229,11 +229,11 @@ public abstract class Repository<T> {
             T object;
             try {
                 object = entityClass.getConstructor(constructorParameterTypes.toArray(new Class[0])).newInstance(allParameters.toArray());
-                log.debug("Created new instance of " + entityClass.getSimpleName() + " with ID and parameters " + Arrays.toString(allParameters.toArray()));
+                log.debug("Created new instance of {} with ID and parameters {}", entityClass.getSimpleName(), Arrays.toString(allParameters.toArray()));
             } catch (NoSuchMethodException e) {
                 // Fall back to ID-only constructor
                 object = entityClass.getConstructor(String.class).newInstance(id);
-                log.debug("Created new instance of " + entityClass.getSimpleName() + " with ID only: " + id);
+                log.debug("Created new instance of {} with ID only: {}", entityClass.getSimpleName(), id);
             }
 
             // Verify the object has the correct ID
@@ -247,10 +247,10 @@ public abstract class Repository<T> {
 
             return object;
         } catch (NoSuchMethodException e) {
-            log.error("Could not find suitable constructor for " + entityClass.getSimpleName() + " with ID: " + id);
+            log.error("Could not find suitable constructor for {} with ID: {}", entityClass.getSimpleName(), id);
             throw new IllegalStateException("No suitable constructor found for " + entityClass.getSimpleName(), e);
         } catch (IllegalAccessException | InstantiationException | InvocationTargetException e) {
-            log.error("Error creating new instance of " + entityClass.getSimpleName() + " with ID: " + id, e);
+            log.error("Error creating new instance of {} with ID: {}", entityClass.getSimpleName(), id, e);
             throw new IllegalStateException("Failed to create new instance of " + entityClass.getSimpleName(), e);
         }
     }
@@ -270,16 +270,16 @@ public abstract class Repository<T> {
                 }
                 T object = entityClass.getConstructor(constructorParameters.toArray(new Class[0])).newInstance(parameters);
 
-                log.debug("Created new instance of " + entityClass.getSimpleName() + " with parameters " + Arrays.toString(parameters));
+                log.debug("Created new instance of {} with parameters {}", entityClass.getSimpleName(), Arrays.toString(parameters));
 
                 cacheObject(id, object);
                 saveToDatabase(object);
 
                 return object;
             } catch (NoSuchMethodException e) {
-                log.error("Could not find constructor for " + entityClass.getSimpleName() + " with parameters " + Arrays.toString(parameters));
+                log.error("Could not find constructor for {} with parameters {}", entityClass.getSimpleName(), Arrays.toString(parameters));
             } catch (IllegalAccessException | InstantiationException | InvocationTargetException e) {
-                log.error("Error creating new instance of " + entityClass.getSimpleName() + " with parameters " + Arrays.toString(parameters));
+                log.error("Error creating new instance of {} with parameters {}", entityClass.getSimpleName(), Arrays.toString(parameters));
             }
 
             return null;
@@ -297,7 +297,7 @@ public abstract class Repository<T> {
 
     public void cacheObject(String id, T object) {
         cache.put(id, object);
-        debug("Cached document with ID " + id);
+        debug("Cached document with ID {}", id);
     }
 
     public void cacheObject(T object) {
@@ -331,7 +331,7 @@ public abstract class Repository<T> {
 
     @Nullable
     public BulkWriteResult saveAllToDatabase() {
-        log("Saving all documents in cache to database (found " + cache.asMap().size() + ")");
+        log("Saving all documents in cache to database (found {})", cache.asMap().size());
 
         List<WriteModel<Document>> updates = new ArrayList<>();
 
@@ -349,7 +349,7 @@ public abstract class Repository<T> {
             updates.add(new UpdateOneModel<>(filter, update, new UpdateOptions().upsert(true)));
         });
 
-        log("Prepared " + updates.size() + " update operations");
+        log("Prepared {} update operations", updates.size());
 
         if (!updates.isEmpty()) {
             return mongoCollection.bulkWrite(updates);
@@ -360,7 +360,7 @@ public abstract class Repository<T> {
 
     public CompletableFuture<BulkWriteResult> saveAllToDatabaseAsync() {
         return CompletableFuture.supplyAsync(() -> {
-            log("Saving all documents in cache to database asynchronously (found " + cache.asMap().size() + ")");
+            log("Saving all documents in cache to database asynchronously (found {})", cache.asMap().size());
 
             List<WriteModel<Document>> updates = new ArrayList<>();
 
@@ -378,7 +378,7 @@ public abstract class Repository<T> {
                 updates.add(new UpdateOneModel<>(filter, update, new UpdateOptions().upsert(true)));
             });
 
-            log("Prepared " + updates.size() + " update operations");
+            log("Prepared {} update operations", updates.size());
 
             if (!updates.isEmpty()) {
                 return mongoCollection.bulkWrite(updates);
@@ -390,7 +390,7 @@ public abstract class Repository<T> {
 
     public DeleteResult deleteFromDatabase(String id) {
         cache.invalidate(id);
-        log("Deleting document with ID " + id + " from database");
+        log("Deleting document with ID {} from database", id);
 
         return mongoCollection.deleteOne(Filters.eq(identifierFieldName, id));
     }
@@ -398,7 +398,7 @@ public abstract class Repository<T> {
     public CompletableFuture<DeleteResult> deleteFromDatabaseAsync(String id) {
         return CompletableFuture.supplyAsync(() -> {
             cache.invalidate(id);
-            log("Deleting document with ID " + id + " from database asynchronously");
+            log("Deleting document with ID {} from database asynchronously", id);
 
             return mongoCollection.deleteOne(Filters.eq(identifierFieldName, id));
         }, repositoryExecutor);
@@ -422,7 +422,7 @@ public abstract class Repository<T> {
     }
 
     protected T documentToEntity(Document document) {
-        debug("Converting document to entity " + entityClass + ": " + document.toJson());
+        debug("Converting document to entity {}: {}", entityClass, document.toJson());
         return DataSerialization.GSON.fromJson(document.toJson(), entityClass);
     }
 
@@ -444,11 +444,18 @@ public abstract class Repository<T> {
         getAll().forEach(consumer);
     }
 
-    private void log(String message) {
-        log.info("[" + getClass().getSimpleName() + "] " + message);
+    private void log(String message, Object... args) {
+        log.info("[{}] " + message, prepend(getClass().getSimpleName(), args));
     }
 
-    private void debug(String message) {
-        log.debug("[" + getClass().getSimpleName() + "] " + message);
+    private void debug(String message, Object... args) {
+        log.debug("[{}] " + message, prepend(getClass().getSimpleName(), args));
+    }
+
+    private static Object[] prepend(Object first, Object[] rest) {
+        Object[] result = new Object[rest.length + 1];
+        result[0] = first;
+        System.arraycopy(rest, 0, result, 1, rest.length);
+        return result;
     }
 }

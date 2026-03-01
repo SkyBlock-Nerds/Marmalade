@@ -42,7 +42,7 @@ public class FileUtils {
         try (FileOutputStream fos = new FileOutputStream(file)) {
             fos.write(content.getBytes(StandardCharsets.UTF_8));
         }
-        log.info("Created temporary file " + file.getAbsolutePath());
+        log.info("Created temporary file {}", file.getAbsolutePath());
         return file;
     }
 

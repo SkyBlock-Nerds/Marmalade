@@ -92,13 +92,13 @@ public class LastActivity {
                 entry.getMonthlyMessageCount().merge(monthYear, amount, Integer::sum);
 
                 if (entry.getLastKnownDisplayName() == null || !entry.getLastKnownDisplayName().equalsIgnoreCase(channelName)) {
-                    log.debug("Updating channel activity entry for channel " + entry.getLastKnownDisplayName() + " (ID: " + channelId + ") with new display name: " + channelName);
+                    log.debug("Updating channel activity entry for channel {} (ID: {}) with new display name: {}", entry.getLastKnownDisplayName(), channelId, channelName);
                     entry.setLastKnownDisplayName(channelName);
                 }
 
-                log.debug("Updated channel activity entry for channel " + channelName + " (ID: " + channelId + "): " + entry.getMessageCount() + " messages");
+                log.debug("Updated channel activity entry for channel {} (ID: {}): {} messages", channelName, channelId, entry.getMessageCount());
             }, () -> {
-                log.debug("Adding new channel activity entry for channel " + channelName + " (ID: " + channelId + ")");
+                log.debug("Adding new channel activity entry for channel {} (ID: {})", channelName, channelId);
                 channelActivityHistory.add(new ChannelActivityEntry(channelId, channelName, amount, timestamp, new HashMap<>(Map.of(DateFormatUtils.format(timestamp, "MM-yyyy"), amount))));
             });
     }
