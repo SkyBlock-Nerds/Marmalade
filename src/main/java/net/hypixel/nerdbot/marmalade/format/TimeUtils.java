@@ -1,5 +1,8 @@
 package net.hypixel.nerdbot.marmalade.format;
 
+import java.time.LocalDate;
+import java.time.Month;
+import java.time.ZoneId;
 import java.util.Calendar;
 import java.util.concurrent.TimeUnit;
 
@@ -66,7 +69,12 @@ public final class TimeUtils {
     }
 
     public static boolean isAprilFirst() {
-        return Calendar.getInstance().get(Calendar.MONTH) == Calendar.APRIL && Calendar.getInstance().get(Calendar.DAY_OF_MONTH) == 1;
+        return isAprilFirst(ZoneId.systemDefault());
+    }
+
+    public static boolean isAprilFirst(ZoneId zoneId) {
+        LocalDate now = LocalDate.now(zoneId);
+        return now.getMonth() == Month.APRIL && now.getDayOfMonth() == 1;
     }
 
     public static boolean isDayOfMonth(int dayOfMonth) {
