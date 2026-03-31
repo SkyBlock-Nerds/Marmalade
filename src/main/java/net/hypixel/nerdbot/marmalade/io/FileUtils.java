@@ -8,12 +8,19 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 
 @Slf4j
 @UtilityClass
@@ -25,6 +32,43 @@ public class FileUtils {
     public static String getBranchName() {
         String branchName = System.getenv("BRANCH_NAME");
         return branchName == null || branchName.isBlank() ? "unknown" : branchName;
+    }
+
+    public static String getCommitHash() {
+        String commitHash = System.getenv("COMMIT_HASH");
+        return commitHash == null || commitHash.isBlank() ? "unknown" : commitHash;
+    }
+
+    public static Map<String, Properties> getDependencyGitInfo() {
+        Map<String, Properties> result = new HashMap<>();
+        String classPath = System.getProperty("java.class.path", "");
+
+        for (String path : classPath.split(File.pathSeparator)) {
+            File file = new File(path);
+            if (!file.isFile() || !file.getName().endsWith(".jar")) {
+                continue;
+            }
+
+            try (JarFile jar = new JarFile(file)) {
+                Enumeration<JarEntry> entries = jar.entries();
+                while (entries.hasMoreElements()) {
+                    JarEntry entry = entries.nextElement();
+                    if (entry.getName().endsWith("git.properties")) {
+                        Properties props = new Properties();
+                        try (InputStream is = jar.getInputStream(entry)) {
+                            props.load(is);
+                        }
+
+                        String artifactId = props.getProperty("git.build.name", file.getName().replaceAll("-\\d.*", ""));
+                        result.put(artifactId, props);
+                    }
+                }
+            } catch (IOException e) {
+                log.debug("Failed to read git.properties from {}", file.getName(), e);
+            }
+        }
+
+        return result;
     }
 
     public static String getDockerContainerId() {
