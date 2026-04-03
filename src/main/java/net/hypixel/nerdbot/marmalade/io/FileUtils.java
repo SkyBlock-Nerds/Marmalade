@@ -42,39 +42,35 @@ public class FileUtils {
     public static Map<String, Properties> getDependencyGitInfo() {
         Map<String, Properties> result = new HashMap<>();
 
-        try {
-            // Scan for git-*.properties files inside JARs on the classpath (works with shaded fat JARs)
-            String classPath = System.getProperty("java.class.path", "");
-            for (String path : classPath.split(File.pathSeparator)) {
-                File file = new File(path);
-                if (!file.isFile() || !file.getName().endsWith(".jar")) {
-                    continue;
-                }
-
-                try (JarFile jar = new JarFile(file)) {
-                    Enumeration<JarEntry> entries = jar.entries();
-                    while (entries.hasMoreElements()) {
-                        JarEntry entry = entries.nextElement();
-                        if (entry.getName().matches("git-.*\\.properties")) {
-                            Properties props = new Properties();
-                            try (InputStream is = jar.getInputStream(entry)) {
-                                props.load(is);
-                            }
-
-                            // Derive name from filename: "git-minecraftimagegenerator.properties" -> "MinecraftImageGenerator"
-                            String name = entry.getName()
-                                .replaceFirst("^git-", "")
-                                .replaceFirst("\\.properties$", "");
-                            String displayName = props.getProperty("git.build.name", name);
-                            result.put(displayName, props);
-                        }
-                    }
-                } catch (IOException e) {
-                    log.debug("Failed to read git properties from {}", file.getName(), e);
-                }
+        // Scan for git-*.properties files inside JARs on the classpath (works with shaded fat JARs)
+        String classPath = System.getProperty("java.class.path", "");
+        for (String path : classPath.split(File.pathSeparator)) {
+            File file = new File(path);
+            if (!file.isFile() || !file.getName().endsWith(".jar")) {
+                continue;
             }
-        } catch (IOException e) {
-            log.debug("Failed to scan for dependency git info", e);
+
+            try (JarFile jar = new JarFile(file)) {
+                Enumeration<JarEntry> entries = jar.entries();
+                while (entries.hasMoreElements()) {
+                    JarEntry entry = entries.nextElement();
+                    if (entry.getName().matches("git-.*\\.properties")) {
+                        Properties props = new Properties();
+                        try (InputStream is = jar.getInputStream(entry)) {
+                            props.load(is);
+                        }
+
+                        // Derive name from filename: "git-minecraftimagegenerator.properties" -> "MinecraftImageGenerator"
+                        String name = entry.getName()
+                            .replaceFirst("^git-", "")
+                            .replaceFirst("\\.properties$", "");
+                        String displayName = props.getProperty("git.build.name", name);
+                        result.put(displayName, props);
+                    }
+                }
+            } catch (IOException e) {
+                log.debug("Failed to read git properties from {}", file.getName(), e);
+            }
         }
 
         return result;
