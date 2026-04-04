@@ -17,6 +17,8 @@ import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import net.hypixel.nerdbot.marmalade.exception.RepositoryException;
+import net.hypixel.nerdbot.marmalade.functional.Result;
 import net.hypixel.nerdbot.marmalade.json.DataSerialization;
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -161,11 +163,11 @@ public abstract class Repository<T> {
         }, repositoryExecutor);
     }
 
-    public T findById(String id) {
+    public Result<T, RepositoryException> findById(String id) {
         T cachedObject = cache.getIfPresent(id);
         if (cachedObject != null) {
             debug("Found document with ID {} in cache", id);
-            return cachedObject;
+            return Result.success(cachedObject);
         }
 
         try {
@@ -173,16 +175,15 @@ public abstract class Repository<T> {
             if (document != null) {
                 T object = documentToEntity(document);
                 cacheObject(id, object);
-
-                return object;
+                return Result.success(object);
             }
         } catch (MongoException e) {
             log.error("Error finding document with ID {}", id, e);
-            return null;
+            return Result.failure(new RepositoryException("Database error looking up ID: " + id, e));
         }
 
         debug("Could not find document with ID {} in cache or database", id);
-        return null;
+        return Result.failure(new RepositoryException("Not found: " + id));
     }
 
     public CompletableFuture<T> findByIdAsync(String id) {
@@ -208,10 +209,16 @@ public abstract class Repository<T> {
 
     public T findOrCreateById(String id, Object... parameters) {
         try {
-            T existingObject = findById(id);
+            Result<T, RepositoryException> findResult = findById(id);
 
-            if (existingObject != null) {
-                return existingObject;
+            if (findResult.isSuccess()) {
+                return findResult.orElse(null);
+            }
+
+            // Treat a database error as a hard failure rather than silently creating a duplicate
+            if (findResult instanceof Result.Failure<T, RepositoryException> failure
+                    && failure.error().getCause() instanceof MongoException) {
+                throw new IllegalStateException("Database error while looking up ID: " + id, failure.error());
             }
 
             // First try to use constructor with ID parameter
@@ -258,10 +265,16 @@ public abstract class Repository<T> {
     public CompletableFuture<T> findOrCreateByIdAsync(String id, Object... parameters) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                T existingObject = findById(id);
+                Result<T, RepositoryException> findResult = findById(id);
 
-                if (existingObject != null) {
-                    return existingObject;
+                if (findResult.isSuccess()) {
+                    return findResult.orElse(null);
+                }
+
+                // Treat a database error as a hard failure rather than silently creating a duplicate
+                if (findResult instanceof Result.Failure<T, RepositoryException> failure
+                        && failure.error().getCause() instanceof MongoException) {
+                    throw new IllegalStateException("Database error while looking up ID: " + id, failure.error());
                 }
 
                 List<Class<?>> constructorParameters = new ArrayList<>();
