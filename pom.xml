@@ -75,7 +75,7 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Optional dependencies — only available when consumer also depends on these -->
+        <!-- Optional: only available when consumer also depends on these -->
         <dependency>
             <groupId>net.dv8tion</groupId>
             <artifactId>JDA</artifactId>

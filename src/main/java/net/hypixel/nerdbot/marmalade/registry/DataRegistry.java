@@ -30,7 +30,7 @@ public abstract class DataRegistry<T> {
     private final List<T> items = new ArrayList<>();
 
     // -------------------------------------------------------------------------
-    // Abstract methods -- subclasses must implement
+    // Abstract methods - subclasses must implement
     // -------------------------------------------------------------------------
 
     /**

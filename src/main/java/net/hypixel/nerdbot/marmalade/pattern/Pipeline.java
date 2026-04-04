@@ -178,7 +178,7 @@ public class Pipeline<C> {
          *
          * @param name     the display name of the stage, used in logging
          * @param fn       the transformation function to apply
-         * @param priority the execution priority -- lower values run first
+         * @param priority the execution priority - lower values run first
          * @return this builder
          */
         public Builder<C> addStage(String name, Function<C, C> fn, int priority) {
@@ -190,7 +190,7 @@ public class Pipeline<C> {
          *
          * @param name     the display name of the stage, used in logging
          * @param fn       the transformation function to apply
-         * @param priority the execution priority -- lower values run first
+         * @param priority the execution priority - lower values run first
          * @param guard    a predicate that determines whether the stage should run for a given context
          * @return this builder
          */

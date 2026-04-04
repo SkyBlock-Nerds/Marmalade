@@ -78,7 +78,7 @@ class RetryTest {
         )
             .isInstanceOf(Retry.RetryExhaustedException.class);
 
-        // IllegalStateException does not match IOException -- should NOT retry
+        // IllegalStateException does not match IOException - should NOT retry
         assertThat(calls.get()).isEqualTo(1);
     }
 

@@ -59,7 +59,7 @@ public class Validator {
 
     /**
      * Records a validation error if {@code value} is non-null and shorter than {@code min} characters.
-     * A null value is silently skipped -- combine with {@link #notNull} if null should also be rejected.
+     * A null value is silently skipped - combine with {@link #notNull} if null should also be rejected.
      *
      * @param value     the string to test
      * @param min       the minimum allowed length (inclusive)
@@ -75,7 +75,7 @@ public class Validator {
 
     /**
      * Records a validation error if {@code value} is non-null and longer than {@code max} characters.
-     * A null value is silently skipped -- combine with {@link #notNull} if null should also be rejected.
+     * A null value is silently skipped - combine with {@link #notNull} if null should also be rejected.
      *
      * @param value     the string to test
      * @param max       the maximum allowed length (inclusive)
@@ -91,7 +91,7 @@ public class Validator {
 
     /**
      * Records a validation error if {@code value} is non-null and outside the closed range [{@code min}, {@code max}].
-     * A null value is silently skipped -- combine with {@link #notNull} if null should also be rejected.
+     * A null value is silently skipped - combine with {@link #notNull} if null should also be rejected.
      *
      * @param <T>       a {@link Comparable} type
      * @param value     the value to test

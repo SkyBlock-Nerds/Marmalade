@@ -60,7 +60,7 @@ public class MessageSplitter {
             int chunkEnd = -1;
             int nextStart = -1;
 
-            // Search backwards from end for newline -- split before it, skip it
+            // Search backwards from end for newline - split before it, skip it
             for (int i = end - 1; i >= searchStart; i--) {
                 if (content.charAt(i) == '\n') {
                     chunkEnd = i;
@@ -69,7 +69,7 @@ public class MessageSplitter {
                 }
             }
 
-            // Search backwards from end for space if no newline found -- split before it, skip it
+            // Search backwards from end for space if no newline found - split before it, skip it
             if (chunkEnd == -1) {
                 for (int i = end - 1; i >= searchStart; i--) {
                     if (content.charAt(i) == ' ') {
@@ -146,7 +146,7 @@ public class MessageSplitter {
                     break;
                 }
                 if (!currentlyInCodeBlock) {
-                    // Opening fence -- extract language identifier on the same line
+                    // Opening fence - extract language identifier on the same line
                     int langStart = idx + 3;
                     int langEnd = content.indexOf('\n', langStart);
                     if (langEnd == -1 || langEnd >= end) {

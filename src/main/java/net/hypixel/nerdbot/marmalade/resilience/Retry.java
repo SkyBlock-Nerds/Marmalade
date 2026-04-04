@@ -219,7 +219,7 @@ public class Retry {
                 }
             }
 
-            // Unreachable -- loop always either returns or throws, but satisfies the compiler
+            // Unreachable - loop always either returns or throws, but satisfies the compiler
             throw new RetryExhaustedException(maxAttempts, failures);
         }
 
