@@ -1,5 +1,8 @@
 package net.hypixel.nerdbot.marmalade.image;
 
+import dev.matrixlab.webp4j.WebPCodec;
+import dev.matrixlab.webp4j.animation.FrameNormalizer;
+import dev.matrixlab.webp4j.gif.GifToWebPConfig;
 import javax.imageio.ImageIO;
 import javax.imageio.stream.ImageOutputStream;
 import java.awt.*;
@@ -9,6 +12,7 @@ import java.awt.image.Raster;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 
 public class ImageUtil {
@@ -180,6 +184,39 @@ public class ImageUtil {
         }
 
         return baos.toByteArray();
+    }
+
+    /**
+     * Encodes a list of BufferedImage frames into an animated WebP byte array using
+     * webp4j (which wraps libwebp via JNI). Uses lossless compression to preserve
+     * pixel-art fidelity and alpha channel exactly.
+     *
+     * <p>The {@code loop} parameter is currently ignored; animated WebP output always
+     * loops indefinitely. Kept for API symmetry with {@link #toGifBytes(List, int, boolean)};
+     * may become effective if webp4j exposes a loop-count configuration in a future
+     * version.
+     *
+     * @param frames  The list of frames to encode.
+     * @param delayMs The delay between frames in milliseconds.
+     * @param loop    Currently ignored (see method-level note). Pass {@code true} for forward compatibility.
+     *
+     * @return A byte array containing the animated WebP data.
+     *
+     * @throws IOException              If an error occurs during encoding.
+     * @throws IllegalArgumentException If {@code frames} is null or empty.
+     */
+    public static byte[] toWebpBytes(List<BufferedImage> frames, int delayMs, boolean loop) throws IOException {
+        if (frames == null || frames.isEmpty()) {
+            throw new IllegalArgumentException("Frames list cannot be null or empty");
+        }
+
+        List<BufferedImage> normalized = FrameNormalizer.normalize(frames);
+        int[] delays = new int[normalized.size()];
+        Arrays.fill(delays, delayMs);
+
+        GifToWebPConfig config = GifToWebPConfig.createLosslessConfig();
+
+        return WebPCodec.createAnimatedWebP(normalized, delays, config);
     }
 
     /**
