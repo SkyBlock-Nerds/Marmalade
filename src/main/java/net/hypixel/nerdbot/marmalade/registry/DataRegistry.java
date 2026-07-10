@@ -1,6 +1,9 @@
 package net.hypixel.nerdbot.marmalade.registry;
 
+import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import lombok.extern.slf4j.Slf4j;
 import net.hypixel.nerdbot.marmalade.json.JsonLoader;
 
@@ -201,11 +204,17 @@ public abstract class DataRegistry<T> {
      * matches (case-insensitive) and appending any that are not already present.
      * Override to implement custom merge semantics.
      *
+     * <p>Replacement is whole-entry: fields that are set on the bundled item but null on the external
+     * item are lost. When that happens a WARN is logged naming the dropped fields, so operators can
+     * spot external files that lag behind the bundled data. Detection compares the Gson-serialized
+     * form of both items, so primitive fields (which always serialize) cannot be detected as dropped.
+     *
      * @param existing the mutable list of items already loaded from the classpath resource
      * @param external the list of items loaded from the external override file
      */
     protected void mergeExternal(List<T> existing, List<T> external) {
         Function<T, String> extractor = getNameExtractor();
+        Gson gson = customizeGson().apply(new GsonBuilder()).create();
 
         for (T incoming : external) {
             String incomingName = extractor.apply(incoming);
@@ -213,6 +222,7 @@ public abstract class DataRegistry<T> {
 
             for (int i = 0; i < existing.size(); i++) {
                 if (incomingName.equalsIgnoreCase(extractor.apply(existing.get(i)))) {
+                    warnOnDroppedFields(existing.get(i), incoming, incomingName, gson);
                     existing.set(i, incoming);
                     replaced = true;
                     break;
@@ -222,6 +232,33 @@ public abstract class DataRegistry<T> {
             if (!replaced) {
                 existing.add(incoming);
             }
+        }
+    }
+
+    /**
+     * Logs a WARN if {@code replacement} is missing fields that are present on {@code bundled},
+     * comparing their Gson-serialized forms (null fields are omitted by Gson, so a missing key
+     * means the field is null on the replacement).
+     */
+    private void warnOnDroppedFields(T bundled, T replacement, String name, Gson gson) {
+        JsonElement bundledTree = gson.toJsonTree(bundled);
+        JsonElement replacementTree = gson.toJsonTree(replacement);
+
+        if (!bundledTree.isJsonObject() || !replacementTree.isJsonObject()) {
+            return;
+        }
+
+        JsonObject replacementObject = replacementTree.getAsJsonObject();
+        List<String> droppedFields = bundledTree.getAsJsonObject().keySet().stream()
+            .filter(field -> {
+                JsonElement value = replacementObject.get(field);
+                return value == null || value.isJsonNull();
+            })
+            .toList();
+
+        if (!droppedFields.isEmpty()) {
+            log.warn("External override '{}' in registry '{}' replaces the bundled entry but drops field(s) {}; the bundled values for these fields will be lost",
+                name, getClass().getSimpleName(), droppedFields);
         }
     }
 }

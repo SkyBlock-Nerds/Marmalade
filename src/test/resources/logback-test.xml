@@ -1,0 +1,4 @@
+<configuration>
+    <!-- Keep test output silent by default; tests that assert on logging attach their own appenders. -->
+    <root level="OFF"/>
+</configuration>

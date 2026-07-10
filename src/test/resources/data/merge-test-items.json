@@ -1,0 +1,15 @@
+[
+    {
+        "name": "Sword",
+        "value": 10,
+        "icon": "sword.png",
+        "overrides": {
+            "pack": "sword_pack.png"
+        }
+    },
+    {
+        "name": "Shield",
+        "value": 5,
+        "icon": "shield.png"
+    }
+]
