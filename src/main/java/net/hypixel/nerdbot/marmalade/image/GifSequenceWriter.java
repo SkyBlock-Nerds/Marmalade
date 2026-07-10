@@ -37,14 +37,19 @@ public class GifSequenceWriter {
     public GifSequenceWriter(ImageOutputStream output, int imageType, int timeBetweenFramesMS, boolean loopContinuously) throws IOException {
         gifWriter = getWriter();
         imageWriteParam = gifWriter.getDefaultWriteParam();
-        ImageTypeSpecifier imageTypeSpecifier = ImageTypeSpecifier.createFromBufferedImageType(imageType);
+        // Frames are normalized to TYPE_INT_ARGB before encoding (see toGifCompatibleFrame),
+        // so the metadata must be derived from ARGB as well. Deriving it from other types
+        // makes the JDK encoder palettize against the wrong color table and lose colors.
+        ImageTypeSpecifier imageTypeSpecifier = ImageTypeSpecifier.createFromBufferedImageType(BufferedImage.TYPE_INT_ARGB);
         imageMetaData = gifWriter.getDefaultImageMetadata(imageTypeSpecifier, imageWriteParam);
 
         String metaFormatName = imageMetaData.getNativeMetadataFormatName();
         IIOMetadataNode root = (IIOMetadataNode) imageMetaData.getAsTree(metaFormatName);
         IIOMetadataNode graphicsControlExtensionNode = getNode(root, "GraphicControlExtension");
 
-        graphicsControlExtensionNode.setAttribute("disposalMethod", "none");
+        // Clear each frame before drawing the next one. With "none", frames with transparent
+        // regions accumulate on top of each other (visible as ghosting on animated text).
+        graphicsControlExtensionNode.setAttribute("disposalMethod", "restoreToBackgroundColor");
         graphicsControlExtensionNode.setAttribute("userInputFlag", "FALSE");
         graphicsControlExtensionNode.setAttribute("transparentColorFlag", "FALSE");
         graphicsControlExtensionNode.setAttribute("delayTime", Integer.toString(timeBetweenFramesMS / 10));
@@ -93,10 +98,63 @@ public class GifSequenceWriter {
     }
 
     public void writeToSequence(RenderedImage img) throws IOException {
-        gifWriter.writeToSequence(new IIOImage(img, null, imageMetaData), imageWriteParam);
+        BufferedImage frame = toGifCompatibleFrame(img);
+        gifWriter.writeToSequence(new IIOImage(frame, null, imageMetaData), imageWriteParam);
 
         // Add the frame to the frames list
-        frames.add((BufferedImage) img);
+        frames.add(frame);
+    }
+
+    /**
+     * Prepares a frame for GIF encoding. GIF supports only 1-bit alpha and the JDK encoder
+     * maps every pixel with alpha below 255 to the transparent index, so semi-transparent
+     * artwork silently disappears. Force any visible pixel to full opacity while keeping
+     * fully transparent pixels transparent. Frames are also converted to TYPE_INT_ARGB,
+     * which the JDK encoder palettizes reliably; other types can lose colors entirely.
+     * The input image is never mutated because callers reuse frames for other encodings.
+     *
+     * @param img The frame to prepare.
+     *
+     * @return An ARGB frame with binary alpha, or the input if it already satisfies both.
+     */
+    private static BufferedImage toGifCompatibleFrame(RenderedImage img) {
+        BufferedImage source;
+        if (img instanceof BufferedImage buffered && buffered.getType() == BufferedImage.TYPE_INT_ARGB) {
+            source = buffered;
+        } else {
+            source = new BufferedImage(img.getWidth(), img.getHeight(), BufferedImage.TYPE_INT_ARGB);
+            Graphics2D graphics = source.createGraphics();
+            graphics.drawRenderedImage(img, null);
+            graphics.dispose();
+        }
+
+        if (!hasPartialAlpha(source)) {
+            return source;
+        }
+
+        BufferedImage normalized = new BufferedImage(source.getWidth(), source.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < source.getHeight(); y++) {
+            for (int x = 0; x < source.getWidth(); x++) {
+                int argb = source.getRGB(x, y);
+                if ((argb >>> 24) != 0) {
+                    argb |= 0xFF000000;
+                }
+                normalized.setRGB(x, y, argb);
+            }
+        }
+        return normalized;
+    }
+
+    private static boolean hasPartialAlpha(BufferedImage image) {
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                int alpha = image.getRGB(x, y) >>> 24;
+                if (alpha != 0 && alpha != 255) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     public BufferedImage toBufferedImage() {
