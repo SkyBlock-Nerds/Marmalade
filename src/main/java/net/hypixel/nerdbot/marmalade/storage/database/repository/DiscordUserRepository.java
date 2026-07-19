@@ -7,6 +7,7 @@ import net.hypixel.nerdbot.marmalade.storage.database.model.user.birthday.Birthd
 import net.hypixel.nerdbot.marmalade.storage.database.model.user.stats.LastActivity;
 import net.hypixel.nerdbot.marmalade.storage.repository.Repository;
 
+import java.util.ArrayList;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -46,6 +47,11 @@ public class DiscordUserRepository extends Repository<DiscordUser> {
                     if (discordUser.getBirthdayData() == null) {
                         log.info("Birthday data for {} was null. Setting to default values!", discordUser.getDiscordId());
                         discordUser.setBirthdayData(new BirthdayData());
+                    }
+
+                    if (discordUser.getRoleIds() == null) {
+                        log.info("Role ids for {} were null. Setting to default values!", discordUser.getDiscordId());
+                        discordUser.setRoleIds(new ArrayList<>());
                     }
 
                     cacheObject(discordUser);
