@@ -31,12 +31,13 @@ public class DiscordUser {
     private MojangProfile mojangProfile;
     private GeneratorHistory generatorHistory;
     private boolean autoHideGenCommands;
+    private List<String> roleIds;
 
     public DiscordUser() {
     }
 
     public DiscordUser(String discordId) {
-        this(discordId, new ArrayList<>(), new LastActivity(), new BirthdayData(), new MojangProfile(), new GeneratorHistory(), false);
+        this(discordId, new ArrayList<>(), new LastActivity(), new BirthdayData(), new MojangProfile(), new GeneratorHistory(), false, new ArrayList<>());
     }
 
     public boolean isProfileAssigned() {
