@@ -50,6 +50,7 @@ public abstract class Repository<T> {
     private final Class<T> entityClass;
     private final String identifierFieldName;
     private final ExecutorService repositoryExecutor = SHARED_EXECUTOR;
+    private final boolean saveOnEviction;
     private Field field;
 
     protected Repository(MongoClient mongoClient, String databaseName, String collectionName, String identifierFieldName) {
@@ -57,6 +58,17 @@ public abstract class Repository<T> {
     }
 
     protected Repository(MongoClient mongoClient, String databaseName, String collectionName, String identifierFieldName, long expireAfterAccess, TimeUnit timeUnit) {
+        this(mongoClient, databaseName, collectionName, identifierFieldName, expireAfterAccess, timeUnit, true);
+    }
+
+    /**
+     * @param saveOnEviction whether documents evicted from the cache (e.g. by expiry) are written back to the
+     *                       database. Disable this when another process may delete or update the same documents,
+     *                       as write-back would resurrect deleted rows or overwrite newer data with stale copies.
+     */
+    protected Repository(MongoClient mongoClient, String databaseName, String collectionName, String identifierFieldName, long expireAfterAccess, TimeUnit timeUnit, boolean saveOnEviction) {
+        this.saveOnEviction = saveOnEviction;
+
         ParameterizedType parameterizedType = (ParameterizedType) getClass().getGenericSuperclass();
         this.entityClass = (Class<T>) parameterizedType.getActualTypeArguments()[0];
 
@@ -77,7 +89,7 @@ public abstract class Repository<T> {
             .removalListener((String key, T value, RemovalCause cause) -> {
                 debug("Removing document with ID {} from cache for reason {}", key, cause);
 
-                if (cause != RemovalCause.EXPLICIT && cause != RemovalCause.REPLACED) {
+                if (saveOnEviction && cause != RemovalCause.EXPLICIT && cause != RemovalCause.REPLACED) {
                     saveToDatabase(value);
                 }
             })
