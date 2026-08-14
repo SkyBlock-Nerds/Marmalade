@@ -109,6 +109,19 @@ public class HttpDrivePermissionClient implements DrivePermissionClient {
     }
 
     @Override
+    public String getFileName(String fileId) throws DriveApiException {
+        String url = BASE_URL + encode(fileId) + "?supportsAllDrives=true&fields=name";
+        HttpExecutor.Response response = send(new HttpExecutor.Request("GET", url, null));
+        requireSuccess(response, "get name of file {}", fileId);
+
+        JsonObject parsed = parseObject(response.body(), fileId);
+        if (!parsed.has("name")) {
+            throw new DriveApiException(response.statusCode(), "Metadata response for file {} had no name", fileId);
+        }
+        return parsed.get("name").getAsString();
+    }
+
+    @Override
     public String grantPermission(String folderId, String email, DriveAccessLevel level) throws DriveApiException {
         JsonObject body = new JsonObject();
         body.addProperty("type", "user");

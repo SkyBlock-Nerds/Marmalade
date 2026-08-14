@@ -3,10 +3,13 @@ package net.hypixel.nerdbot.marmalade.google.drive;
 import java.util.List;
 
 /**
- * The three Drive operations needed to manage per-user folder access. Kept as
- * an interface so consumers test against in-memory fakes.
+ * The Drive operations needed to manage per-user folder access. Kept as an
+ * interface so consumers test against in-memory fakes.
  */
 public interface DrivePermissionClient {
+
+    /** Returns the display name of a file or folder. */
+    String getFileName(String fileId) throws DriveApiException;
 
     /**
      * Grants {@code email} the given access level on a folder.

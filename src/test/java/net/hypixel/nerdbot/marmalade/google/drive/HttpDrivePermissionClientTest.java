@@ -65,6 +65,20 @@ class HttpDrivePermissionClientTest {
     }
 
     @Test
+    void getFileNameFetchesMetadata() throws DriveApiException {
+        executor.enqueue(200, "{\"name\":\"Members (Editor)\"}");
+        assertThat(client.getFileName("folder-1")).isEqualTo("Members (Editor)");
+        assertThat(executor.requests.getFirst().method()).isEqualTo("GET");
+        assertThat(executor.requests.getFirst().url()).isEqualTo(
+            "https://www.googleapis.com/drive/v3/files/folder-1?supportsAllDrives=true&fields=name");
+
+        executor.enqueue(404, "not found");
+        assertThatThrownBy(() -> client.getFileName("gone"))
+            .isInstanceOf(DriveApiException.class)
+            .isNotInstanceOf(TransientDriveApiException.class);
+    }
+
+    @Test
     void grantIncludesCustomEmailMessageOnlyWhenNotifying() throws DriveApiException {
         ScriptedExecutor notifyingExecutor = new ScriptedExecutor();
         HttpDrivePermissionClient notifyingClient = new HttpDrivePermissionClient(notifyingExecutor, true, "Shared by the bot");
