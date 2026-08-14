@@ -63,4 +63,21 @@ class ServiceAccountKeyTest {
     void rejectsInvalidJson() {
         assertThatThrownBy(() -> ServiceAccountKey.fromJson("not json")).isInstanceOf(GoogleAuthException.class);
     }
+
+    @Test
+    void toStringRedactsPrivateKey() throws Exception {
+        KeyPair keyPair = generateKeyPair();
+        ServiceAccountKey key = ServiceAccountKey.fromJson(keyJson(keyPair));
+        String toString = key.toString();
+
+        // Must include public-facing fields
+        assertThat(toString).contains("bot@project.iam.gserviceaccount.com");
+
+        // Must redact the key
+        assertThat(toString).contains("<redacted>");
+
+        // Must not contain private key markers or material
+        assertThat(toString).doesNotContain("BEGIN PRIVATE");
+        assertThat(toString).doesNotContain(String.valueOf(key.privateKey().getPrivateExponent()));
+    }
 }

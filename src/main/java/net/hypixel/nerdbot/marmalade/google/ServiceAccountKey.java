@@ -60,4 +60,9 @@ public record ServiceAccountKey(String clientEmail, String tokenUri, RSAPrivateK
             throw new GoogleAuthException("Service account private_key is not a valid PKCS#8 RSA key", e);
         }
     }
+
+    @Override
+    public String toString() {
+        return "ServiceAccountKey[clientEmail=" + clientEmail + ", tokenUri=" + tokenUri + ", privateKey=<redacted>]";
+    }
 }
