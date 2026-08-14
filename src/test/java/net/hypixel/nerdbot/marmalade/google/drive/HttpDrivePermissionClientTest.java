@@ -1,5 +1,6 @@
 package net.hypixel.nerdbot.marmalade.google.drive;
 
+import net.hypixel.nerdbot.marmalade.google.GoogleAuthException;
 import net.hypixel.nerdbot.marmalade.google.drive.HttpDrivePermissionClient.HttpExecutor;
 import org.junit.jupiter.api.Test;
 
@@ -33,7 +34,7 @@ class HttpDrivePermissionClientTest {
     }
 
     private final ScriptedExecutor executor = new ScriptedExecutor();
-    private final HttpDrivePermissionClient client = new HttpDrivePermissionClient(() -> "test-token", executor);
+    private final HttpDrivePermissionClient client = new HttpDrivePermissionClient(executor);
 
     @Test
     void grantPostsPermissionAndReturnsId() throws DriveApiException {
@@ -76,9 +77,20 @@ class HttpDrivePermissionClientTest {
         HttpExecutor broken = request -> {
             throw new java.io.IOException("connection reset");
         };
-        HttpDrivePermissionClient brokenClient = new HttpDrivePermissionClient(() -> "t", broken);
+        HttpDrivePermissionClient brokenClient = new HttpDrivePermissionClient(broken);
         assertThatThrownBy(() -> brokenClient.listPermissions("f"))
             .isInstanceOf(TransientDriveApiException.class);
+    }
+
+    @Test
+    void authFailureIsNotTransient() {
+        HttpExecutor authFailed = request -> {
+            throw new GoogleAuthException("unable to obtain access token");
+        };
+        HttpDrivePermissionClient brokenClient = new HttpDrivePermissionClient(authFailed);
+        assertThatThrownBy(() -> brokenClient.listPermissions("f"))
+            .isInstanceOf(DriveApiException.class)
+            .isNotInstanceOf(TransientDriveApiException.class);
     }
 
     @Test

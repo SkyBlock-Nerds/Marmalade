@@ -10,6 +10,7 @@ import net.hypixel.nerdbot.marmalade.google.GoogleAuthException;
 
 import java.net.URI;
 import java.net.URLEncoder;
+import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -26,7 +27,6 @@ public class HttpDrivePermissionClient implements DrivePermissionClient {
 
     private static final String BASE_URL = "https://www.googleapis.com/drive/v3/files/";
 
-    private final AccessTokenProvider tokenProvider;
     private final HttpExecutor executor;
 
     /** HTTP seam so tests can script responses without a network. */
@@ -41,17 +41,20 @@ public class HttpDrivePermissionClient implements DrivePermissionClient {
         }
     }
 
-    public HttpDrivePermissionClient(AccessTokenProvider tokenProvider, HttpExecutor executor) {
-        this.tokenProvider = tokenProvider;
+    /**
+     * Creates a Drive client using the given executor for all HTTP communication.
+     * The executor owns both transport and authentication concerns (e.g. Bearer token headers).
+     */
+    public HttpDrivePermissionClient(HttpExecutor executor) {
         this.executor = executor;
     }
 
     public static HttpDrivePermissionClient createDefault(AccessTokenProvider tokenProvider) {
-        java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+        HttpClient client = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
-        return new HttpDrivePermissionClient(tokenProvider, request -> {
+        return new HttpDrivePermissionClient(request -> {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(request.url()))
                 .timeout(Duration.ofSeconds(30))
