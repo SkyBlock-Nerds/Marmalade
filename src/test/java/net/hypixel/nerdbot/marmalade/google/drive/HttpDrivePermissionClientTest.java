@@ -65,6 +65,24 @@ class HttpDrivePermissionClientTest {
     }
 
     @Test
+    void grantIncludesCustomEmailMessageOnlyWhenNotifying() throws DriveApiException {
+        ScriptedExecutor notifyingExecutor = new ScriptedExecutor();
+        HttpDrivePermissionClient notifyingClient = new HttpDrivePermissionClient(notifyingExecutor, true, "Shared by the bot");
+        notifyingExecutor.enqueue(200, "{\"id\":\"perm-1\"}");
+        notifyingClient.grantPermission("folder-1", "user@example.com", DriveAccessLevel.READER);
+        assertThat(notifyingExecutor.requests.getFirst().url())
+            .contains("sendNotificationEmail=true")
+            .contains("&emailMessage=Shared%20by%20the%20bot");
+
+        // Message is ignored while notifications are off
+        ScriptedExecutor silentExecutor = new ScriptedExecutor();
+        HttpDrivePermissionClient silentClient = new HttpDrivePermissionClient(silentExecutor, false, "Shared by the bot");
+        silentExecutor.enqueue(200, "{\"id\":\"perm-2\"}");
+        silentClient.grantPermission("folder-1", "user@example.com", DriveAccessLevel.READER);
+        assertThat(silentExecutor.requests.getFirst().url()).doesNotContain("emailMessage");
+    }
+
+    @Test
     void grantSurfacesClientErrorWithStatus() {
         executor.enqueue(400, "{\"error\":{\"message\":\"invalid sharing request\"}}");
         assertThatThrownBy(() -> client.grantPermission("folder-1", "nobody@example.com", DriveAccessLevel.READER))
