@@ -413,6 +413,16 @@ public abstract class Repository<T> {
         }, repositoryExecutor);
     }
 
+    /**
+     * Removes a single field from the stored document. A {@code $set}-based save
+     * cannot do this: the serializer omits null fields, and {@code $set} leaves
+     * absent fields untouched, so clearing a field in memory alone never deletes
+     * it from Mongo.
+     */
+    public UpdateResult unsetField(String id, String fieldName) {
+        return mongoCollection.updateOne(Filters.eq(identifierFieldName, id), new Document("$unset", new Document(fieldName, "")));
+    }
+
     public DeleteResult deleteFromDatabase(String id) {
         cache.invalidate(id);
         log("Deleting document with ID {} from database", id);
