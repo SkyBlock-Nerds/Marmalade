@@ -53,6 +53,18 @@ class HttpDrivePermissionClientTest {
     }
 
     @Test
+    void grantCanRequestNotificationEmail() throws DriveApiException {
+        ScriptedExecutor notifyingExecutor = new ScriptedExecutor();
+        HttpDrivePermissionClient notifyingClient = new HttpDrivePermissionClient(notifyingExecutor, true);
+        notifyingExecutor.enqueue(200, "{\"id\":\"perm-1\"}");
+
+        notifyingClient.grantPermission("folder-1", "user@example.com", DriveAccessLevel.READER);
+
+        assertThat(notifyingExecutor.requests.getFirst().url()).isEqualTo(
+            "https://www.googleapis.com/drive/v3/files/folder-1/permissions?supportsAllDrives=true&sendNotificationEmail=true");
+    }
+
+    @Test
     void grantSurfacesClientErrorWithStatus() {
         executor.enqueue(400, "{\"error\":{\"message\":\"invalid sharing request\"}}");
         assertThatThrownBy(() -> client.grantPermission("folder-1", "nobody@example.com", DriveAccessLevel.READER))

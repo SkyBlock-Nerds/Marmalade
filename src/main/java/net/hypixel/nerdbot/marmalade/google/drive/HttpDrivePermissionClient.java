@@ -20,14 +20,16 @@ import java.util.List;
 
 /**
  * Drive v3 permissions over plain HTTP. All calls pass supportsAllDrives=true
- * (the folders live in a shared drive) and grants suppress Google's
- * notification email — members are told about their access in Discord instead.
+ * (the folders live in a shared drive). Whether grants trigger Google's
+ * share-notification email is the caller's choice; revocations never notify,
+ * which is a Drive API limitation rather than an option here.
  */
 public class HttpDrivePermissionClient implements DrivePermissionClient {
 
     private static final String BASE_URL = "https://www.googleapis.com/drive/v3/files/";
 
     private final HttpExecutor executor;
+    private final boolean sendNotificationEmails;
 
     /** HTTP seam so tests can script responses without a network. */
     public interface HttpExecutor {
@@ -44,12 +46,28 @@ public class HttpDrivePermissionClient implements DrivePermissionClient {
     /**
      * Creates a Drive client using the given executor for all HTTP communication.
      * The executor owns both transport and authentication concerns (e.g. Bearer token headers).
+     * Grants are created without Google's share-notification email.
      */
     public HttpDrivePermissionClient(HttpExecutor executor) {
+        this(executor, false);
+    }
+
+    /**
+     * Creates a Drive client using the given executor for all HTTP communication.
+     * The executor owns both transport and authentication concerns (e.g. Bearer token headers).
+     *
+     * @param sendNotificationEmails whether grants trigger Google's share-notification email
+     */
+    public HttpDrivePermissionClient(HttpExecutor executor, boolean sendNotificationEmails) {
         this.executor = executor;
+        this.sendNotificationEmails = sendNotificationEmails;
     }
 
     public static HttpDrivePermissionClient createDefault(AccessTokenProvider tokenProvider) {
+        return createDefault(tokenProvider, false);
+    }
+
+    public static HttpDrivePermissionClient createDefault(AccessTokenProvider tokenProvider, boolean sendNotificationEmails) {
         HttpClient client = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
@@ -69,7 +87,7 @@ public class HttpDrivePermissionClient implements DrivePermissionClient {
 
             HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
             return new HttpExecutor.Response(response.statusCode(), response.body());
-        });
+        }, sendNotificationEmails);
     }
 
     @Override
@@ -79,7 +97,7 @@ public class HttpDrivePermissionClient implements DrivePermissionClient {
         body.addProperty("role", level.getApiRole());
         body.addProperty("emailAddress", email);
 
-        String url = BASE_URL + encode(folderId) + "/permissions?supportsAllDrives=true&sendNotificationEmail=false";
+        String url = BASE_URL + encode(folderId) + "/permissions?supportsAllDrives=true&sendNotificationEmail=" + sendNotificationEmails;
         HttpExecutor.Response response = send(new HttpExecutor.Request("POST", url, body.toString()));
         requireSuccess(response, "grant permission on folder {}", folderId);
 
