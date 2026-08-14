@@ -30,6 +30,7 @@ public class HttpDrivePermissionClient implements DrivePermissionClient {
 
     private final HttpExecutor executor;
     private final boolean sendNotificationEmails;
+    private final String notificationEmailMessage;
 
     /** HTTP seam so tests can script responses without a network. */
     public interface HttpExecutor {
@@ -59,8 +60,21 @@ public class HttpDrivePermissionClient implements DrivePermissionClient {
      * @param sendNotificationEmails whether grants trigger Google's share-notification email
      */
     public HttpDrivePermissionClient(HttpExecutor executor, boolean sendNotificationEmails) {
+        this(executor, sendNotificationEmails, null);
+    }
+
+    /**
+     * Creates a Drive client using the given executor for all HTTP communication.
+     * The executor owns both transport and authentication concerns (e.g. Bearer token headers).
+     *
+     * @param sendNotificationEmails   whether grants trigger Google's share-notification email
+     * @param notificationEmailMessage custom text included in the notification email; only sent
+     *                                 when notifications are enabled, blank/null uses Google's default wording
+     */
+    public HttpDrivePermissionClient(HttpExecutor executor, boolean sendNotificationEmails, String notificationEmailMessage) {
         this.executor = executor;
         this.sendNotificationEmails = sendNotificationEmails;
+        this.notificationEmailMessage = notificationEmailMessage;
     }
 
     public static HttpDrivePermissionClient createDefault(AccessTokenProvider tokenProvider) {
@@ -68,6 +82,10 @@ public class HttpDrivePermissionClient implements DrivePermissionClient {
     }
 
     public static HttpDrivePermissionClient createDefault(AccessTokenProvider tokenProvider, boolean sendNotificationEmails) {
+        return createDefault(tokenProvider, sendNotificationEmails, null);
+    }
+
+    public static HttpDrivePermissionClient createDefault(AccessTokenProvider tokenProvider, boolean sendNotificationEmails, String notificationEmailMessage) {
         HttpClient client = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
@@ -87,7 +105,7 @@ public class HttpDrivePermissionClient implements DrivePermissionClient {
 
             HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
             return new HttpExecutor.Response(response.statusCode(), response.body());
-        }, sendNotificationEmails);
+        }, sendNotificationEmails, notificationEmailMessage);
     }
 
     @Override
@@ -98,6 +116,9 @@ public class HttpDrivePermissionClient implements DrivePermissionClient {
         body.addProperty("emailAddress", email);
 
         String url = BASE_URL + encode(folderId) + "/permissions?supportsAllDrives=true&sendNotificationEmail=" + sendNotificationEmails;
+        if (sendNotificationEmails && notificationEmailMessage != null && !notificationEmailMessage.isBlank()) {
+            url += "&emailMessage=" + encode(notificationEmailMessage);
+        }
         HttpExecutor.Response response = send(new HttpExecutor.Request("POST", url, body.toString()));
         requireSuccess(response, "grant permission on folder {}", folderId);
 
