@@ -196,16 +196,42 @@ public class HttpDrivePermissionClient implements DrivePermissionClient {
         if (status >= 200 && status < 300) {
             return;
         }
+
+        String reason = extractErrorReason(response.body());
         if (status == 429 || status >= 500) {
-            throw new TransientDriveApiException(status, "Transient Drive failure (HTTP {}) trying to " + action, prepend(status, args));
+            throw new TransientDriveApiException(status, "Transient Drive failure (HTTP {}, reason {}) trying to " + action,
+                prepend(status, reason, args)).reason(reason);
         }
-        throw new DriveApiException(status, "Drive rejected request (HTTP {}) trying to " + action, prepend(status, args));
+        throw new DriveApiException(status, "Drive rejected request (HTTP {}, reason {}) trying to " + action,
+            prepend(status, reason, args)).reason(reason);
     }
 
-    private static Object[] prepend(Object first, Object[] rest) {
-        Object[] combined = new Object[rest.length + 1];
+    /**
+     * Pulls the machine-readable reason code (e.g. sharingRateLimitExceeded,
+     * invalidSharingRequest) out of a Drive error body. Only the enum-like code
+     * is extracted; the human-readable message is deliberately dropped because
+     * it can echo the email address being shared.
+     */
+    private static String extractErrorReason(String body) {
+        try {
+            JsonObject error = JsonParser.parseString(body).getAsJsonObject().getAsJsonObject("error");
+            if (error.has("errors") && !error.getAsJsonArray("errors").isEmpty()) {
+                JsonObject first = error.getAsJsonArray("errors").get(0).getAsJsonObject();
+                if (first.has("reason")) {
+                    return first.get("reason").getAsString();
+                }
+            }
+            return error.has("status") ? error.get("status").getAsString() : "unknown";
+        } catch (RuntimeException e) {
+            return "unknown";
+        }
+    }
+
+    private static Object[] prepend(Object first, Object second, Object[] rest) {
+        Object[] combined = new Object[rest.length + 2];
         combined[0] = first;
-        System.arraycopy(rest, 0, combined, 1, rest.length);
+        combined[1] = second;
+        System.arraycopy(rest, 0, combined, 2, rest.length);
         return combined;
     }
 
