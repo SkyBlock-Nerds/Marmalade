@@ -106,6 +106,27 @@ class HttpDrivePermissionClientTest {
     }
 
     @Test
+    void errorReasonCodeIsExtractedButMessageIsNot() {
+        executor.enqueue(403, """
+            {"error":{"code":403,"message":"Rate limit exceeded sharing to nobody@example.com.",
+            "errors":[{"reason":"sharingRateLimitExceeded","message":"Rate limit exceeded sharing to nobody@example.com."}]}}
+            """);
+        assertThatThrownBy(() -> client.grantPermission("folder-1", "nobody@example.com", DriveAccessLevel.READER))
+            .isInstanceOf(DriveApiException.class)
+            .satisfies(e -> {
+                DriveApiException drive = (DriveApiException) e;
+                assertThat(drive.getReason()).isEqualTo("sharingRateLimitExceeded");
+                assertThat(drive.getMessage()).contains("sharingRateLimitExceeded").doesNotContain("nobody@example.com");
+            });
+
+        // Unparseable body degrades to "unknown"
+        executor.enqueue(400, "not json");
+        assertThatThrownBy(() -> client.listPermissions("folder-1"))
+            .isInstanceOf(DriveApiException.class)
+            .satisfies(e -> assertThat(((DriveApiException) e).getReason()).isEqualTo("unknown"));
+    }
+
+    @Test
     void rateLimitAndServerErrorsAreTransient() {
         executor.enqueue(429, "slow down");
         assertThatThrownBy(() -> client.grantPermission("f", "e@x.com", DriveAccessLevel.READER))
