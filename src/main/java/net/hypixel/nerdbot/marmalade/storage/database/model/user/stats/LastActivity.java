@@ -27,6 +27,9 @@ import java.util.function.ToLongFunction;
 @ToString
 public class LastActivity {
 
+    private static final DateTimeFormatter MONTH_YEAR_FORMATTER =
+        DateTimeFormatter.ofPattern("MM-yyyy").withResolverStyle(ResolverStyle.SMART);
+
     // Global Activity
     private long lastGlobalActivity = -1L;
     private long lastVoiceChannelJoinDate = -1L;
@@ -187,29 +190,7 @@ public class LastActivity {
      * Get channel activity history for a role-restricted channel group within specified days
      */
     public List<ChannelActivityEntry> getRoleRestrictedChannelActivityHistory(String groupIdentifier, int days) {
-        List<ChannelActivityEntry> groupHistory = roleRestrictedChannelActivityHistory.getOrDefault(groupIdentifier, new ArrayList<>());
-        LocalDate endDate = LocalDate.now();
-        LocalDate startDate = endDate.minusDays(days - 1);
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM-yyyy").withResolverStyle(ResolverStyle.SMART);
-        List<ChannelActivityEntry> entries = new ArrayList<>();
-
-        for (ChannelActivityEntry entry : groupHistory) {
-            Map<String, Integer> monthlyMessageCountMap = new HashMap<>(entry.getMonthlyMessageCount());
-
-            monthlyMessageCountMap.entrySet().removeIf(e -> {
-                YearMonth date = YearMonth.parse(e.getKey(), formatter);
-                return date.isBefore(YearMonth.from(startDate)) || date.isAfter(YearMonth.from(endDate));
-            });
-
-            int messageCount = monthlyMessageCountMap.values().stream().mapToInt(i -> i).sum();
-
-            if (messageCount > 0) {
-                entries.add(new ChannelActivityEntry(entry.getChannelId(), entry.getLastKnownDisplayName(),
-                    messageCount, entry.getLastMessageTimestamp(), monthlyMessageCountMap));
-            }
-        }
-
-        return entries;
+        return filterToWindow(roleRestrictedChannelActivityHistory.getOrDefault(groupIdentifier, List.of()), days);
     }
 
     public boolean purgeOldHistory(int daysRequiredForVoteHistory) {
@@ -242,23 +223,37 @@ public class LastActivity {
     }
 
     public List<ChannelActivityEntry> getChannelActivityHistory(int days) {
+        return filterToWindow(channelActivityHistory, days);
+    }
+
+    /**
+     * Builds copies of the entries; the stored entries must not be modified because the
+     * owning record is persisted after reads.
+     */
+    private static List<ChannelActivityEntry> filterToWindow(List<ChannelActivityEntry> history, int days) {
         LocalDate endDate = LocalDate.now();
-        LocalDate startDate = endDate.minusDays(days - 1);
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM-yyyy").withResolverStyle(ResolverStyle.SMART);
+        YearMonth endMonth = YearMonth.from(endDate);
+        YearMonth startMonth = YearMonth.from(endDate.minusDays(days - 1));
         List<ChannelActivityEntry> entries = new ArrayList<>();
 
-        for (ChannelActivityEntry entry : channelActivityHistory) {
-            Map<String, Integer> monthlyMessageCountMap = entry.getMonthlyMessageCount();
+        for (ChannelActivityEntry entry : history) {
+            if (entry.getMonthlyMessageCount() == null) {
+                continue;
+            }
 
-            monthlyMessageCountMap.entrySet().removeIf(e -> {
-                YearMonth date = YearMonth.parse(e.getKey(), formatter);
-                return date.isBefore(YearMonth.from(startDate)) || date.isAfter(YearMonth.from(endDate));
+            Map<String, Integer> inWindow = new HashMap<>();
+            entry.getMonthlyMessageCount().forEach((monthYear, count) -> {
+                YearMonth month = YearMonth.parse(monthYear, MONTH_YEAR_FORMATTER);
+                if (!month.isBefore(startMonth) && !month.isAfter(endMonth)) {
+                    inWindow.put(monthYear, count);
+                }
             });
 
-            int messageCount = monthlyMessageCountMap.values().stream().mapToInt(i -> i).sum();
+            int messageCount = inWindow.values().stream().mapToInt(Integer::intValue).sum();
 
             if (messageCount > 0) {
-                entries.add(new ChannelActivityEntry(entry.getChannelId(), entry.getLastKnownDisplayName(), messageCount, entry.getLastMessageTimestamp(), monthlyMessageCountMap));
+                entries.add(new ChannelActivityEntry(entry.getChannelId(), entry.getLastKnownDisplayName(),
+                    messageCount, entry.getLastMessageTimestamp(), inWindow));
             }
         }
 
