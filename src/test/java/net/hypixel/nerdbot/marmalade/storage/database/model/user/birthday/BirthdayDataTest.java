@@ -69,6 +69,17 @@ class BirthdayDataTest {
     }
 
     @Test
+    void formattedDateIsDisplayDateWithoutZone() {
+        assertThat(born(2007, 10, 4).getFormattedDate()).isEqualTo("04 October 2007");
+    }
+
+    @Test
+    void formattedDateThrowsWhenUnset() {
+        assertThatThrownBy(() -> new BirthdayData().getFormattedDate())
+            .isInstanceOf(IllegalStateException.class).hasMessage("Birthday is not set");
+    }
+
+    @Test
     void invalidOrMissingTimezoneFallsBackToUtc() {
         BirthdayData data = born(2007, 10, 4);
         assertThat(data.getTimeZoneId()).isEqualTo(ZoneId.of("UTC"));

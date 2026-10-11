@@ -74,8 +74,7 @@ public class DiscordUserRepository extends Repository<DiscordUser> {
         getMongoCollection().find(birthdaySetFilter())
             .projection(Projections.include("discordId"))
             .forEach(document -> {
-                String id = document.getString("discordId");
-                if (id != null) {
+                if (document.get("discordId") instanceof String id) {
                     ids.add(id);
                 }
             });

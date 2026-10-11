@@ -4,7 +4,6 @@ import com.google.gson.JsonDeserializationContext;
 import com.google.gson.JsonDeserializer;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
-import com.google.gson.JsonParseException;
 import com.google.gson.JsonPrimitive;
 import com.google.gson.JsonSerializationContext;
 import com.google.gson.JsonSerializer;
@@ -45,7 +44,7 @@ public class BirthDateAdapter implements JsonSerializer<LocalDate>, JsonDeserial
             return epochMillis == LEGACY_UNSET
                 ? null
                 : LocalDate.ofInstant(Instant.ofEpochMilli(epochMillis), ZoneOffset.UTC);
-        } catch (JsonParseException exception) {
+        } catch (RuntimeException exception) {
             // Losing one unreadable birthday is better than failing to load the whole user
             log.warn("Ignoring unreadable birth date {}", json, exception);
             return null;

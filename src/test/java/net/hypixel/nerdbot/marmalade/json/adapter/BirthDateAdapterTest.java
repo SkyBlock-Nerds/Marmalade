@@ -53,6 +53,11 @@ class BirthDateAdapterTest {
     }
 
     @Test
+    void outOfRangeIsoStringReadsAsNull() {
+        assertThat(read("\"+999999999-01-01T00:00:00Z\"")).isNull();
+    }
+
+    @Test
     void writesIsoDateThatSurvivesABsonRoundTrip() {
         Holder holder = new Holder();
         holder.date = LocalDate.of(1955, 2, 28);

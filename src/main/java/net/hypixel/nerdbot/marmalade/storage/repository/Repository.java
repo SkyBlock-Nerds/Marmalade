@@ -333,33 +333,7 @@ public abstract class Repository<T> {
     }
 
     public CompletableFuture<BulkWriteResult> saveAllToDatabaseAsync() {
-        return CompletableFuture.supplyAsync(() -> {
-            log("Saving all documents in cache to database asynchronously (found {})", cache.asMap().size());
-
-            List<WriteModel<Document>> updates = new ArrayList<>();
-
-            getAll().stream().map(this::entityToDocument).forEach(doc -> {
-                Object idValue = doc.get(identifierFieldName);
-
-                if (idValue == null) {
-                    log.warn("Document has null identifier field '{}': {}", identifierFieldName, doc.toJson());
-                    return;
-                }
-
-                Bson filter = Filters.eq(identifierFieldName, idValue);
-                Bson update = new Document("$set", doc);
-
-                updates.add(new UpdateOneModel<>(filter, update, new UpdateOptions().upsert(true)));
-            });
-
-            log("Prepared {} update operations", updates.size());
-
-            if (!updates.isEmpty()) {
-                return mongoCollection.bulkWrite(updates);
-            }
-
-            return null;
-        }, repositoryExecutor);
+        return CompletableFuture.supplyAsync(this::saveAllToDatabase, repositoryExecutor);
     }
 
     /**

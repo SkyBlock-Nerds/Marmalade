@@ -17,7 +17,7 @@ import java.util.Locale;
 public class BirthdayData {
 
     private static final DateTimeFormatter DISPLAY_FORMAT = DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.ENGLISH);
-    private static final ZoneId DEFAULT_ZONE = ZoneId.of("UTC");
+    public static final ZoneId DEFAULT_ZONE = ZoneId.of("UTC");
 
     @JsonAdapter(BirthDateAdapter.class)
     @SerializedName(value = "birthDate", alternate = {"birthdayTimestamp", "birthday"})
@@ -63,11 +63,19 @@ public class BirthdayData {
         return date.isBefore(getBirthdayIn(date.getYear())) ? age - 1 : age;
     }
 
+    public String getFormattedDate() {
+        if (!isBirthdaySet()) {
+            throw new IllegalStateException("Birthday is not set");
+        }
+
+        return DISPLAY_FORMAT.format(birthDate);
+    }
+
     public String getFormattedDisplay() {
         if (!isBirthdaySet()) {
             return "Not Set";
         }
 
-        return DISPLAY_FORMAT.format(birthDate) + " (" + getTimeZoneId().getId() + ")";
+        return getFormattedDate() + " (" + getTimeZoneId().getId() + ")";
     }
 }
