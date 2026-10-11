@@ -9,6 +9,7 @@ import io.prometheus.client.hotspot.DefaultExports;
 import lombok.experimental.UtilityClass;
 
 import java.io.IOException;
+import java.util.regex.Pattern;
 
 /**
  * Factory and lifecycle utilities for Prometheus metrics, wrapping the Prometheus Java client to
@@ -16,6 +17,23 @@ import java.io.IOException;
  */
 @UtilityClass
 public class MetricsRegistry {
+
+    private static final Pattern VALID_NAMESPACE = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*");
+    private static final NamespacedMetrics UNPREFIXED = new NamespacedMetrics(null);
+
+    /**
+     * Returns a factory whose metrics are all named {@code <namespace>_<name>}, so several bots or
+     * services can share one Prometheus/Grafana setup without their metric names colliding.
+     *
+     * @param namespace the prefix, e.g. {@code "nerdbot"}
+     * @throws IllegalArgumentException if the namespace isn't a valid Prometheus name prefix
+     */
+    public static NamespacedMetrics namespace(String namespace) {
+        if (namespace == null || !VALID_NAMESPACE.matcher(namespace).matches()) {
+            throw new IllegalArgumentException("Invalid metrics namespace: '" + namespace + "'");
+        }
+        return new NamespacedMetrics(namespace);
+    }
 
     /**
      * Builds and registers a Prometheus counter with optional label dimensions.
@@ -26,11 +44,7 @@ public class MetricsRegistry {
      * @return the registered {@link Counter}
      */
     public static Counter counter(String name, String help, String... labelNames) {
-        Counter.Builder builder = Counter.build().name(name).help(help);
-        if (labelNames.length > 0) {
-            builder.labelNames(labelNames);
-        }
-        return builder.register();
+        return UNPREFIXED.counter(name, help, labelNames);
     }
 
     /**
@@ -42,11 +56,7 @@ public class MetricsRegistry {
      * @return the registered {@link Gauge}
      */
     public static Gauge gauge(String name, String help, String... labelNames) {
-        Gauge.Builder builder = Gauge.build().name(name).help(help);
-        if (labelNames.length > 0) {
-            builder.labelNames(labelNames);
-        }
-        return builder.register();
+        return UNPREFIXED.gauge(name, help, labelNames);
     }
 
     /**
@@ -58,11 +68,7 @@ public class MetricsRegistry {
      * @return the registered {@link Histogram}
      */
     public static Histogram histogram(String name, String help, String... labelNames) {
-        Histogram.Builder builder = Histogram.build().name(name).help(help);
-        if (labelNames.length > 0) {
-            builder.labelNames(labelNames);
-        }
-        return builder.register();
+        return UNPREFIXED.histogram(name, help, labelNames);
     }
 
     /**
@@ -75,11 +81,7 @@ public class MetricsRegistry {
      * @return the registered {@link Histogram}
      */
     public static Histogram histogram(String name, String help, double[] buckets, String... labelNames) {
-        Histogram.Builder builder = Histogram.build().name(name).help(help).buckets(buckets);
-        if (labelNames.length > 0) {
-            builder.labelNames(labelNames);
-        }
-        return builder.register();
+        return UNPREFIXED.histogram(name, help, buckets, labelNames);
     }
 
     /**
@@ -91,11 +93,7 @@ public class MetricsRegistry {
      * @return the registered {@link Summary}
      */
     public static Summary summary(String name, String help, String... labelNames) {
-        Summary.Builder builder = Summary.build().name(name).help(help);
-        if (labelNames.length > 0) {
-            builder.labelNames(labelNames);
-        }
-        return builder.register();
+        return UNPREFIXED.summary(name, help, labelNames);
     }
 
     /**
