@@ -28,6 +28,19 @@ public class TieredBadge extends Badge {
             .orElse(null);
     }
 
+    public String getFormattedName(int tier) {
+        Tier match = getTier(tier);
+        if (match == null) {
+            return getName() + " (Tier " + tier + ")";
+        }
+
+        String label = getName() + " (" + match.getName() + ")";
+        if (match.getEmoji() == null || match.getEmoji().isBlank()) {
+            return label;
+        }
+        return match.getEmoji() + " " + label;
+    }
+
     @Getter
     @Setter
     @ToString
