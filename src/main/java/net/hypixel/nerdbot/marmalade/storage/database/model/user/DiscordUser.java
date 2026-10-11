@@ -14,9 +14,8 @@ import net.hypixel.nerdbot.marmalade.storage.database.model.user.stats.LastActiv
 import net.hypixel.nerdbot.marmalade.storage.database.model.user.stats.MojangProfile;
 
 import java.time.DateTimeException;
+import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.Date;
 import java.util.List;
 
 @AllArgsConstructor
@@ -50,31 +49,22 @@ public class DiscordUser {
         return !this.isProfileAssigned();
     }
 
-    public void setBirthday(Date birthday) {
+    public void setBirthday(LocalDate birthDate, LocalDate today) {
+        if (birthDate.isAfter(today)) {
+            throw new DateTimeException("Birthday cannot be in the future");
+        }
+
+        if (birthDate.getYear() < 1900) {
+            throw new DateTimeException("Year cannot be before 1900");
+        }
+
         if (birthdayData == null) {
             log.debug("Creating new birthday data for {}", discordId);
             birthdayData = new BirthdayData();
         }
 
-        Calendar calendar = Calendar.getInstance();
-        calendar.setTime(birthday);
-
-        if (calendar.get(Calendar.YEAR) > Calendar.getInstance().get(Calendar.YEAR)) {
-            throw new DateTimeException("Year cannot be in the future");
-        }
-
-        if (calendar.get(Calendar.YEAR) < 1900) {
-            throw new DateTimeException("Year cannot be before 1900");
-        }
-
-        calendar.set(Calendar.MILLISECOND, 0);
-        calendar.set(Calendar.SECOND, 0);
-        calendar.set(Calendar.MINUTE, 0);
-        calendar.set(Calendar.HOUR_OF_DAY, 0);
-
-        log.info("Setting birthday for {} to {}", discordId, calendar.getTime());
-
-        birthdayData.setBirthday(calendar.getTime());
+        log.info("Setting birthday for {} to {}", discordId, birthDate);
+        birthdayData.setBirthDate(birthDate);
     }
 
     public boolean addBadge(Badge badge) {

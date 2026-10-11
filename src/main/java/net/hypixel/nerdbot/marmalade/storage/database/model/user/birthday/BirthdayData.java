@@ -4,104 +4,63 @@ import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.annotations.SerializedName;
 import lombok.Getter;
 import lombok.Setter;
-import net.hypixel.nerdbot.marmalade.json.adapter.EpochMillisAdapter;
+import net.hypixel.nerdbot.marmalade.json.adapter.BirthDateAdapter;
 
-import java.text.SimpleDateFormat;
+import java.time.DateTimeException;
+import java.time.LocalDate;
 import java.time.ZoneId;
-import java.time.ZonedDateTime;
-import java.util.Calendar;
-import java.util.Date;
-import java.util.Timer;
-import java.util.TimeZone;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 
-@Setter
 @Getter
+@Setter
 public class BirthdayData {
 
-    @JsonAdapter(EpochMillisAdapter.class)
-    @SerializedName(value = "birthdayTimestamp", alternate = {"birthday"})
-    private long birthdayTimestamp;
+    private static final DateTimeFormatter DISPLAY_FORMAT = DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.ENGLISH);
+    private static final ZoneId DEFAULT_ZONE = ZoneId.of("UTC");
+
+    @JsonAdapter(BirthDateAdapter.class)
+    @SerializedName(value = "birthDate", alternate = {"birthdayTimestamp", "birthday"})
+    private LocalDate birthDate;
     private boolean shouldAnnounceAge;
     private String timezone;
-    private transient Timer timer;
-
-    public BirthdayData() {
-        this(-1L, false, null, null);
-    }
-
-    public BirthdayData(long birthdayTimestamp, boolean shouldAnnounceAge, Timer timer, String timezone) {
-        this.birthdayTimestamp = birthdayTimestamp;
-        this.shouldAnnounceAge = shouldAnnounceAge;
-        this.timer = timer;
-        this.timezone = timezone;
-    }
+    private int lastAnnouncedYear;
 
     public ZoneId getTimeZoneId() {
         if (timezone == null || timezone.isBlank()) {
-            return ZoneId.of("UTC");
+            return DEFAULT_ZONE;
         }
 
         try {
             return ZoneId.of(timezone);
-        } catch (Exception e) {
-            return ZoneId.of("UTC");
+        } catch (DateTimeException exception) {
+            return DEFAULT_ZONE;
         }
     }
 
     public boolean isBirthdaySet() {
-        return birthdayTimestamp > 0;
+        return birthDate != null;
     }
 
-    public Date getBirthday() {
-        return getBirthdayDate();
+    // lastAnnouncedYear survives so removing and re-adding a birthday can't trigger a second announcement
+    public void clearBirthday() {
+        birthDate = null;
+        shouldAnnounceAge = false;
+        timezone = null;
     }
 
-    public Date getBirthdayDate() {
-        return isBirthdaySet() ? new Date(birthdayTimestamp) : null;
-    }
-
-    public void setBirthday(Date birthday) {
-        this.birthdayTimestamp = birthday != null ? birthday.getTime() : -1L;
-    }
-
-    public long getBirthdayThisYearTimestamp() {
+    public LocalDate getBirthdayIn(int year) {
         if (!isBirthdaySet()) {
-            return -1L;
+            throw new IllegalStateException("Birthday is not set");
         }
 
-        ZoneId zoneId = getTimeZoneId();
-
-        Calendar birthdayCal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
-        birthdayCal.setTimeInMillis(birthdayTimestamp);
-        int month = birthdayCal.get(Calendar.MONTH) + 1;
-        int day = birthdayCal.get(Calendar.DAY_OF_MONTH);
-
-        // Create this year's birthday at midnight in the user's timezone
-        ZonedDateTime now = ZonedDateTime.now(zoneId);
-        ZonedDateTime birthdayThisYear = ZonedDateTime.of(
-            now.getYear(), month, day, 0, 0, 0, 0, zoneId
-        );
-
-        // If the birthday has already passed this year, schedule for next year
-        if (birthdayThisYear.isBefore(now) || birthdayThisYear.isEqual(now)) {
-            birthdayThisYear = birthdayThisYear.plusYears(1);
-        }
-
-        return birthdayThisYear.toInstant().toEpochMilli();
+        // withYear moves 29 February to 28 February in non-leap years
+        return birthDate.withYear(year);
     }
 
-    public Date getBirthdayThisYear() {
-        long thisYearTimestamp = getBirthdayThisYearTimestamp();
-        return thisYearTimestamp > 0 ? new Date(thisYearTimestamp) : null;
-    }
-
-    public int getAge() {
-        if (!isBirthdaySet()) {
-            return 0;
-        }
-
-        long diff = System.currentTimeMillis() - birthdayTimestamp;
-        return (int) (diff / (1000L * 60L * 60L * 24L * 365L));
+    public int getAgeOn(LocalDate date) {
+        int age = date.getYear() - birthDate.getYear();
+        return date.isBefore(getBirthdayIn(date.getYear())) ? age - 1 : age;
     }
 
     public String getFormattedDisplay() {
@@ -109,9 +68,6 @@ public class BirthdayData {
             return "Not Set";
         }
 
-        SimpleDateFormat dateFormat = new SimpleDateFormat("dd MMMM yyyy");
-        String dateStr = dateFormat.format(getBirthday());
-
-        return dateStr + " (" + getTimeZoneId().getId() + ")";
+        return DISPLAY_FORMAT.format(birthDate) + " (" + getTimeZoneId().getId() + ")";
     }
 }
