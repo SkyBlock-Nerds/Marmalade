@@ -2,7 +2,12 @@ package net.hypixel.nerdbot.marmalade.storage.database.model.user.stats;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -14,6 +19,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LastActivityTest {
 
     private static final String GROUP = "staff";
+    private static final LocalDate OCTOBER_15 = LocalDate.of(2026, 10, 15);
+    private static final Clock CLOCK = Clock.fixed(at(OCTOBER_15), ZoneId.systemDefault());
+
+    private static Instant at(LocalDate day) {
+        return day.atTime(12, 0).atZone(ZoneId.systemDefault()).toInstant();
+    }
 
     private static String monthsAgo(int months) {
         return YearMonth.now().minusMonths(months).format(DateTimeFormatter.ofPattern("MM-yyyy"));
@@ -145,26 +156,119 @@ class LastActivityTest {
     }
 
     @Test
-    void totalMessageCountForWindowDoesNotPruneHistory() {
-        LastActivity activity = withChannelHistory(
-            entry("general", Map.of(monthsAgo(0), 5, monthsAgo(3), 7)),
-            entry("off-topic", Map.of(monthsAgo(6), 11))
-        );
+    void messagesSinceDailyCountsBeganAreCountedExactly() {
+        LastActivity activity = new LastActivity();
+        activity.addChannelHistory("general", "general", at(OCTOBER_15.minusDays(40)).toEpochMilli());
+        activity.addChannelHistory("general", "general", at(OCTOBER_15.minusDays(29)).toEpochMilli());
+        activity.addChannelHistory("off-topic", "off-topic", 2, at(OCTOBER_15).toEpochMilli());
 
-        assertThat(activity.getTotalMessageCount(1)).isEqualTo(5);
-        assertThat(activity.getTotalMessageCount(365)).isEqualTo(23);
-        assertThat(activity.getTotalMessageCount(1)).isEqualTo(5);
+        assertThat(activity.getTotalMessageCount(30, CLOCK)).isEqualTo(3);
+        assertThat(activity.getTotalMessageCount(1, CLOCK)).isEqualTo(2);
+        assertThat(activity.getTotalMessageCount(41, CLOCK)).isEqualTo(4);
     }
 
     @Test
-    void roleRestrictedHistoryIsConsistentAcrossDifferentWindows() {
-        ChannelActivityEntry stored = entry("staff-chat", Map.of(monthsAgo(0), 5, monthsAgo(3), 7));
-        Map<String, Integer> originalMonthly = new HashMap<>(stored.getMonthlyMessageCount());
-        LastActivity activity = withRoleRestrictedHistory(stored);
+    void thirtyDaysNoLongerReachesBackToTheStartOfLastMonth() {
+        LastActivity activity = new LastActivity();
+        activity.addChannelHistory("general", "general", at(LocalDate.of(2026, 9, 2)).toEpochMilli());
 
-        assertThat(activity.getRoleRestrictedChannelMessageCount(GROUP, 1)).isEqualTo(5);
-        assertThat(activity.getRoleRestrictedChannelMessageCount(GROUP, 365)).isEqualTo(12);
-        assertThat(stored.getMonthlyMessageCount()).isEqualTo(originalMonthly);
+        assertThat(activity.getTotalMessageCount(30, CLOCK)).isZero();
+    }
+
+    @Test
+    void recordsFromBeforeDailyCountsSpreadEachMonthOverItsDays() {
+        LastActivity activity = withChannelHistory(entry("general", Map.of("09-2026", 30, "10-2026", 31)));
+
+        // 16-30 September is 15 of its 30 days, 1-15 October is 15 of 31
+        assertThat(activity.getTotalMessageCount(30, CLOCK)).isEqualTo(30);
+        assertThat(activity.getTotalMessageCount(15, CLOCK)).isEqualTo(15);
+    }
+
+    @Test
+    void theMonthDailyCountsBeganInOnlyEstimatesTheMessagesBeforeThey() {
+        LastActivity activity = withChannelHistory(entry("general", Map.of("10-2026", 6)));
+        activity.addChannelHistory("general", "general", 4, at(LocalDate.of(2026, 10, 11)).toEpochMilli());
+
+        // 6 messages came on 1-10 October, before daily counts began on the 11th; 4 came after
+        assertThat(activity.getTotalMessageCount(30, CLOCK)).isEqualTo(10);
+        assertThat(activity.getTotalMessageCount(10, CLOCK)).isEqualTo(7);
+    }
+
+    @Test
+    void anEmptyWindowCountsNothing() {
+        LastActivity activity = withChannelHistory(entry("general", Map.of("10-2026", 6)));
+
+        assertThat(activity.getTotalMessageCount(0, CLOCK)).isZero();
+    }
+
+    @Test
+    void countingDoesNotChangeTheStoredHistory() {
+        ChannelActivityEntry stored = entry("general", Map.of("10-2026", 5, "07-2026", 7));
+        LastActivity activity = withChannelHistory(stored);
+
+        activity.getTotalMessageCount(365, CLOCK);
+
+        assertThat(stored.getMonthlyMessageCount()).containsOnly(Map.entry("10-2026", 5), Map.entry("07-2026", 7));
+        assertThat(activity.getDailyMessageCount()).isEmpty();
+    }
+
+    @Test
+    void roleRestrictedMessagesAreCountedFromTheirTimestamps() {
+        LastActivity activity = new LastActivity();
+        long now = System.currentTimeMillis();
+        activity.getRoleRestrictedChannelMessageHistory().put(GROUP, new ArrayList<>(List.of(
+            now - Duration.ofHours(1).toMillis(), now - Duration.ofDays(20).toMillis(), now - Duration.ofDays(45).toMillis())));
+
+        assertThat(activity.getRoleRestrictedChannelMessageCount(GROUP, 1)).isEqualTo(1);
+        assertThat(activity.getRoleRestrictedChannelMessageCount(GROUP, 30)).isEqualTo(2);
+        assertThat(activity.getRoleRestrictedChannelMessageCount("missing", 30)).isZero();
+    }
+
+    @Test
+    void purgingClearsEveryHistoryNotJustTheFirst() {
+        LastActivity activity = new LastActivity();
+        long now = System.currentTimeMillis();
+        long old = now - Duration.ofDays(100).toMillis();
+        long recent = now - Duration.ofDays(1).toMillis();
+        activity.getSuggestionCreationHistory().addAll(List.of(recent, old));
+        activity.getSuggestionCommentHistory().add(old);
+        activity.getAlphaSuggestionVoteHistoryMap().put("a", old);
+        activity.getProjectSuggestionVoteHistoryMap().put("b", recent);
+        activity.getRoleRestrictedChannelMessageHistory().put(GROUP, new ArrayList<>(List.of(old)));
+        activity.getRoleRestrictedChannelCommentHistory().put(GROUP, new ArrayList<>(List.of(old)));
+        activity.getRoleRestrictedChannelVoteHistory().put(GROUP, new HashMap<>(Map.of("c", old)));
+
+        assertThat(activity.purgeOldHistory(90)).isTrue();
+
+        assertThat(activity.getSuggestionCreationHistory()).containsExactly(recent);
+        assertThat(activity.getSuggestionCommentHistory()).isEmpty();
+        assertThat(activity.getAlphaSuggestionVoteHistoryMap()).isEmpty();
+        assertThat(activity.getProjectSuggestionVoteHistoryMap()).containsOnlyKeys("b");
+        assertThat(activity.getRoleRestrictedChannelMessageHistory().get(GROUP)).isEmpty();
+        assertThat(activity.getRoleRestrictedChannelCommentHistory().get(GROUP)).isEmpty();
+        assertThat(activity.getRoleRestrictedChannelVoteHistory().get(GROUP)).isEmpty();
+    }
+
+    @Test
+    void purgingNothingSaysSo() {
+        LastActivity activity = new LastActivity();
+        activity.getSuggestionCreationHistory().add(System.currentTimeMillis());
+
+        assertThat(activity.purgeOldHistory(90)).isFalse();
+    }
+
+    @Test
+    void purgedDailyCountsFallBackToTheMonthlyTotals() {
+        LastActivity activity = new LastActivity();
+        LocalDate longAgo = LocalDate.now().minusDays(120);
+        activity.addChannelHistory("general", "general", 3, at(longAgo).toEpochMilli());
+        activity.addChannelHistory("general", "general", at(LocalDate.now()).toEpochMilli());
+
+        activity.purgeOldHistory(90);
+
+        assertThat(activity.getDailyMessageCount()).containsOnlyKeys(LocalDate.now().toString());
+        assertThat(LocalDate.parse(activity.getDailyMessageCountSince())).isAfter(longAgo);
+        assertThat(activity.getTotalMessageCount(365)).isEqualTo(4);
     }
 
     @Test

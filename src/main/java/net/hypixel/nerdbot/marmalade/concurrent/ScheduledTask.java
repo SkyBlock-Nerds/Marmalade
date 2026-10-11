@@ -73,11 +73,12 @@ public class ScheduledTask implements AutoCloseable {
 
         executor = ExecutorFactory.newScheduledDaemon(name);
 
+        // Anything escaping here would cancel every later run without a word, so Errors are caught too
         Runnable wrappedTask = () -> {
             try {
                 task.run();
-            } catch (Exception e) {
-                log.error("Uncaught exception in ScheduledTask '{}'", name, e);
+            } catch (Throwable throwable) {
+                log.error("Uncaught exception in ScheduledTask '{}'", name, throwable);
             }
         };
 

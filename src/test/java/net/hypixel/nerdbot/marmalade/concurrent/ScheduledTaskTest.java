@@ -66,6 +66,22 @@ class ScheduledTaskTest {
     }
 
     @Test
+    void anErrorInTaskDoesNotKillScheduler() throws InterruptedException {
+        CountDownLatch secondRun = new CountDownLatch(2);
+        ScheduledTask task = ScheduledTask.create("error-test", () -> {
+            secondRun.countDown();
+            throw new NoClassDefFoundError("deliberate test error");
+        }, Duration.ofMillis(20));
+
+        task.start();
+        try {
+            assertThat(secondRun.await(2, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            task.stop();
+        }
+    }
+
+    @Test
     void closeStopsTask() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
         ScheduledTask task = ScheduledTask.create("close-test", latch::countDown, Duration.ofMillis(50));
