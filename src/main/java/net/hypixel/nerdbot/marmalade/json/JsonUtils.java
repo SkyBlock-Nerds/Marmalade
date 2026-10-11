@@ -8,15 +8,15 @@ import com.google.gson.JsonParser;
 import lombok.extern.slf4j.Slf4j;
 import net.hypixel.nerdbot.marmalade.Tuple;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileNotFoundException;
-import java.io.FileReader;
 import java.io.IOException;
 import java.io.Reader;
+import java.io.UncheckedIOException;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -174,8 +174,15 @@ public final class JsonUtils {
     }
 
     public static Object jsonToObject(File file, Class<?> clazz) throws FileNotFoundException {
-        BufferedReader br = new BufferedReader(new FileReader(file.getPath()));
-        return DataSerialization.GSON.fromJson(br, clazz);
+        try (Reader reader = Files.newBufferedReader(file.toPath(), StandardCharsets.UTF_8)) {
+            return DataSerialization.GSON.fromJson(reader, clazz);
+        } catch (NoSuchFileException e) {
+            FileNotFoundException notFound = new FileNotFoundException(file.getPath());
+            notFound.initCause(e);
+            throw notFound;
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read " + file.getPath(), e);
+        }
     }
 
     public static JsonObject isJsonObject(JsonObject obj, String element) {
