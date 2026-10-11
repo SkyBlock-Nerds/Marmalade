@@ -32,12 +32,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 @Slf4j
 public abstract class Repository<T> {
@@ -101,78 +103,59 @@ public abstract class Repository<T> {
     public void loadAllDocumentsIntoCache() {
         log("Loading ALL documents from database into cache");
 
-        for (Document document : mongoCollection.find()) {
-            T object = documentToEntity(document);
-            String id = getId(object);
-
-            if (id == null) {
-                throw new IllegalStateException("Document has null ID, cannot cache object: " + document.toJson());
-            }
-
-            if (cache.getIfPresent(id) != null) {
-                debug("Document with ID {} already exists in cache", id);
-                continue;
-            }
-
-            cacheObject(object);
-        }
+        findAllDocuments().forEach(document -> convertOrSkip(document).ifPresent(this::cacheIfAbsent));
     }
 
     public CompletableFuture<Void> loadAllDocumentsIntoCacheAsync() {
         return CompletableFuture.supplyAsync(() -> {
                 log("Loading ALL documents from database into cache asynchronously");
-
-                List<Document> documents = new ArrayList<>();
-                mongoCollection.find().into(documents);
-                return documents;
+                return findAllDocuments();
             }, repositoryExecutor)
-            .thenCompose(documents -> {
-                List<CompletableFuture<Void>> futures = documents.stream()
-                    .map(document -> CompletableFuture.runAsync(() -> {
-                        T object = documentToEntity(document);
-                        String id = getId(object);
-
-                        if (id == null) {
-                            throw new IllegalStateException("Document has null ID, cannot cache object: " + document.toJson());
-                        }
-
-                        if (cache.getIfPresent(getId(object)) != null) {
-                            debug("Document with ID {} already exists in cache", getId(object));
-                            return;
-                        }
-
-                        cacheObject(object);
-                    }, repositoryExecutor))
-                    .toList();
-
-                return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
-            });
+            .thenCompose(documents -> CompletableFuture.allOf(documents.stream()
+                .map(document -> CompletableFuture.runAsync(
+                    () -> convertOrSkip(document).ifPresent(this::cacheIfAbsent), repositoryExecutor))
+                .toArray(CompletableFuture[]::new)));
     }
 
     public List<T> getAllDocuments() {
-        List<T> documents = new ArrayList<>();
-
-        mongoCollection.find()
-            .forEach(document -> {
-                T object = documentToEntity(document);
-                documents.add(object);
-            });
-
-        return documents;
+        return findAllDocuments().stream()
+            .map(this::convertOrSkip)
+            .flatMap(Optional::stream)
+            .collect(Collectors.toCollection(ArrayList::new));
     }
 
     public CompletableFuture<List<T>> getAllDocumentsAsync() {
-        return CompletableFuture.supplyAsync(() -> {
-            List<T> documents = new ArrayList<>();
+        return CompletableFuture.supplyAsync(this::getAllDocuments, repositoryExecutor);
+    }
 
-            mongoCollection.find()
-                .forEach(document -> {
-                    T object = documentToEntity(document);
-                    documents.add(object);
-                });
+    protected List<Document> findAllDocuments() {
+        List<Document> documents = new ArrayList<>();
+        mongoCollection.find().into(documents);
+        return documents;
+    }
 
-            return documents;
-        }, repositoryExecutor);
+    // One unreadable document must not abort loading every other one
+    private Optional<T> convertOrSkip(Document document) {
+        try {
+            T object = documentToEntity(document);
+            if (getId(object) == null) {
+                throw new IllegalStateException("Converted entity has a null " + identifierFieldName);
+            }
+            return Optional.of(object);
+        } catch (RuntimeException exception) {
+            log.error("[{}] Skipping document {} (_id {}) that could not be loaded",
+                getClass().getSimpleName(), document.get(identifierFieldName), document.get("_id"), exception);
+            return Optional.empty();
+        }
+    }
+
+    private void cacheIfAbsent(T object) {
+        String id = getId(object);
+        if (cache.asMap().putIfAbsent(id, object) != null) {
+            debug("Document with ID {} already exists in cache", id);
+        } else {
+            debug("Cached document with ID {}", id);
+        }
     }
 
     public Result<T, RepositoryException> findById(String id) {
