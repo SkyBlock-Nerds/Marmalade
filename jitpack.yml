@@ -1,8 +1,7 @@
-# JitPack installs whichever JDK is listed here through SDKMAN before running anything else, and
-# that install currently fails for anything newer than 8 (SDKMAN reports itself unreachable). JDK 8
-# is already on the builders, so ask for it to get past that step, then build with Temurin 25
-# downloaded from Adoptium. MAVEN_USER_HOME lives in the checkout because the wrapper's Maven has
-# failed to start from ~/.m2 on JitPack (see MinecraftImageGenerator).
+# JitPack installs any other JDK through SDKMAN, which has been failing ("Download has failed",
+# "INTERNET NOT REACHABLE"). OpenJDK 8 is preinstalled on every builder, so asking for it skips
+# SDKMAN entirely; the build then runs on Temurin 25 downloaded straight from Adoptium. Maven's home
+# stays inside the checkout because the wrapper has failed to start from ~/.m2 on JitPack.
 jdk:
   - openjdk8
 install:
