@@ -1,13 +1,18 @@
 package net.hypixel.nerdbot.marmalade.storage.database.repository;
 
 import com.mongodb.client.MongoClient;
+import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.Projections;
 import lombok.extern.slf4j.Slf4j;
 import net.hypixel.nerdbot.marmalade.storage.database.model.user.DiscordUser;
 import net.hypixel.nerdbot.marmalade.storage.database.model.user.birthday.BirthdayData;
 import net.hypixel.nerdbot.marmalade.storage.database.model.user.stats.LastActivity;
 import net.hypixel.nerdbot.marmalade.storage.repository.Repository;
+import org.bson.BsonType;
+import org.bson.conversions.Bson;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -58,5 +63,21 @@ public class DiscordUserRepository extends Repository<DiscordUser> {
                 });
             })
         );
+    }
+
+    static Bson birthdaySetFilter() {
+        return Filters.type("birthdayData.birthDate", BsonType.STRING);
+    }
+
+    public List<String> findIdsWithBirthdaySet() {
+        List<String> ids = new ArrayList<>();
+        getMongoCollection().find(birthdaySetFilter())
+            .projection(Projections.include("discordId"))
+            .forEach(document -> {
+                if (document.get("discordId") instanceof String id) {
+                    ids.add(id);
+                }
+            });
+        return ids;
     }
 }

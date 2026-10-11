@@ -32,12 +32,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 @Slf4j
 public abstract class Repository<T> {
@@ -101,78 +103,59 @@ public abstract class Repository<T> {
     public void loadAllDocumentsIntoCache() {
         log("Loading ALL documents from database into cache");
 
-        for (Document document : mongoCollection.find()) {
-            T object = documentToEntity(document);
-            String id = getId(object);
-
-            if (id == null) {
-                throw new IllegalStateException("Document has null ID, cannot cache object: " + document.toJson());
-            }
-
-            if (cache.getIfPresent(id) != null) {
-                debug("Document with ID {} already exists in cache", id);
-                continue;
-            }
-
-            cacheObject(object);
-        }
+        findAllDocuments().forEach(document -> convertOrSkip(document).ifPresent(this::cacheIfAbsent));
     }
 
     public CompletableFuture<Void> loadAllDocumentsIntoCacheAsync() {
         return CompletableFuture.supplyAsync(() -> {
                 log("Loading ALL documents from database into cache asynchronously");
-
-                List<Document> documents = new ArrayList<>();
-                mongoCollection.find().into(documents);
-                return documents;
+                return findAllDocuments();
             }, repositoryExecutor)
-            .thenCompose(documents -> {
-                List<CompletableFuture<Void>> futures = documents.stream()
-                    .map(document -> CompletableFuture.runAsync(() -> {
-                        T object = documentToEntity(document);
-                        String id = getId(object);
-
-                        if (id == null) {
-                            throw new IllegalStateException("Document has null ID, cannot cache object: " + document.toJson());
-                        }
-
-                        if (cache.getIfPresent(getId(object)) != null) {
-                            debug("Document with ID {} already exists in cache", getId(object));
-                            return;
-                        }
-
-                        cacheObject(object);
-                    }, repositoryExecutor))
-                    .toList();
-
-                return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
-            });
+            .thenCompose(documents -> CompletableFuture.allOf(documents.stream()
+                .map(document -> CompletableFuture.runAsync(
+                    () -> convertOrSkip(document).ifPresent(this::cacheIfAbsent), repositoryExecutor))
+                .toArray(CompletableFuture[]::new)));
     }
 
     public List<T> getAllDocuments() {
-        List<T> documents = new ArrayList<>();
-
-        mongoCollection.find()
-            .forEach(document -> {
-                T object = documentToEntity(document);
-                documents.add(object);
-            });
-
-        return documents;
+        return findAllDocuments().stream()
+            .map(this::convertOrSkip)
+            .flatMap(Optional::stream)
+            .collect(Collectors.toCollection(ArrayList::new));
     }
 
     public CompletableFuture<List<T>> getAllDocumentsAsync() {
-        return CompletableFuture.supplyAsync(() -> {
-            List<T> documents = new ArrayList<>();
+        return CompletableFuture.supplyAsync(this::getAllDocuments, repositoryExecutor);
+    }
 
-            mongoCollection.find()
-                .forEach(document -> {
-                    T object = documentToEntity(document);
-                    documents.add(object);
-                });
+    protected List<Document> findAllDocuments() {
+        List<Document> documents = new ArrayList<>();
+        mongoCollection.find().into(documents);
+        return documents;
+    }
 
-            return documents;
-        }, repositoryExecutor);
+    // One unreadable document must not abort loading every other one
+    private Optional<T> convertOrSkip(Document document) {
+        try {
+            T object = documentToEntity(document);
+            if (getId(object) == null) {
+                throw new IllegalStateException("Converted entity has a null " + identifierFieldName);
+            }
+            return Optional.of(object);
+        } catch (RuntimeException exception) {
+            log.error("[{}] Skipping document {} (_id {}) that could not be loaded",
+                getClass().getSimpleName(), document.get(identifierFieldName), document.get("_id"), exception);
+            return Optional.empty();
+        }
+    }
+
+    private void cacheIfAbsent(T object) {
+        String id = getId(object);
+        if (cache.asMap().putIfAbsent(id, object) != null) {
+            debug("Document with ID {} already exists in cache", id);
+        } else {
+            debug("Cached document with ID {}", id);
+        }
     }
 
     public Result<T, RepositoryException> findById(String id) {
@@ -275,40 +258,7 @@ public abstract class Repository<T> {
     }
 
     public CompletableFuture<T> findOrCreateByIdAsync(String id, Object... parameters) {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                Result<T, RepositoryException> findResult = findById(id);
-
-                if (findResult.isSuccess()) {
-                    return findResult.orElse(null);
-                }
-
-                // Treat a database error as a hard failure rather than silently creating a duplicate
-                if (findResult instanceof Result.Failure<T, RepositoryException> failure
-                        && failure.error().getCause() instanceof MongoException) {
-                    throw new IllegalStateException("Database error while looking up ID: " + id, failure.error());
-                }
-
-                List<Class<?>> constructorParameters = new ArrayList<>();
-                for (Object param : parameters) {
-                    constructorParameters.add(param != null ? param.getClass() : Object.class);
-                }
-                T object = entityClass.getConstructor(constructorParameters.toArray(new Class[0])).newInstance(parameters);
-
-                log.debug("Created new instance of {} with parameters {}", entityClass.getSimpleName(), Arrays.toString(parameters));
-
-                cacheObject(id, object);
-                saveToDatabase(object);
-
-                return object;
-            } catch (NoSuchMethodException e) {
-                log.error("Could not find constructor for {} with parameters {}", entityClass.getSimpleName(), Arrays.toString(parameters));
-            } catch (IllegalAccessException | InstantiationException | InvocationTargetException e) {
-                log.error("Error creating new instance of {} with parameters {}", entityClass.getSimpleName(), Arrays.toString(parameters));
-            }
-
-            return null;
-        }, repositoryExecutor);
+        return CompletableFuture.supplyAsync(() -> findOrCreateById(id, parameters), repositoryExecutor);
     }
 
     public T getByIndex(int index) {
@@ -344,13 +294,12 @@ public abstract class Repository<T> {
     }
 
     public CompletableFuture<UpdateResult> saveToDatabaseAsync(T object) {
-        return CompletableFuture.supplyAsync(() -> {
-            String id = getId(object);
-            Document document = entityToDocument(object);
-            Bson updateOperation = new Document("$set", document);
+        return CompletableFuture.supplyAsync(() -> saveToDatabase(object), repositoryExecutor);
+    }
 
-            return mongoCollection.updateOne(new Document(identifierFieldName, id), updateOperation, new UpdateOptions().upsert(true));
-        }, repositoryExecutor);
+    public CompletableFuture<UpdateResult> cacheAndSaveAsync(T object) {
+        cacheObject(object);
+        return saveToDatabaseAsync(object);
     }
 
 
@@ -384,33 +333,7 @@ public abstract class Repository<T> {
     }
 
     public CompletableFuture<BulkWriteResult> saveAllToDatabaseAsync() {
-        return CompletableFuture.supplyAsync(() -> {
-            log("Saving all documents in cache to database asynchronously (found {})", cache.asMap().size());
-
-            List<WriteModel<Document>> updates = new ArrayList<>();
-
-            getAll().stream().map(this::entityToDocument).forEach(doc -> {
-                Object idValue = doc.get(identifierFieldName);
-
-                if (idValue == null) {
-                    log.warn("Document has null identifier field '{}': {}", identifierFieldName, doc.toJson());
-                    return;
-                }
-
-                Bson filter = Filters.eq(identifierFieldName, idValue);
-                Bson update = new Document("$set", doc);
-
-                updates.add(new UpdateOneModel<>(filter, update, new UpdateOptions().upsert(true)));
-            });
-
-            log("Prepared {} update operations", updates.size());
-
-            if (!updates.isEmpty()) {
-                return mongoCollection.bulkWrite(updates);
-            }
-
-            return null;
-        }, repositoryExecutor);
+        return CompletableFuture.supplyAsync(this::saveAllToDatabase, repositoryExecutor);
     }
 
     /**

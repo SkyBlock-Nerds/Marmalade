@@ -27,7 +27,7 @@ public class EpochMillisAdapter implements JsonSerializer<Long>, JsonDeserialize
             return null;
         }
 
-        return parseElement(json);
+        return parseEpochMillis(json);
     }
 
     @Override
@@ -35,7 +35,7 @@ public class EpochMillisAdapter implements JsonSerializer<Long>, JsonDeserialize
         return src == null ? JsonNull.INSTANCE : new JsonPrimitive(src);
     }
 
-    private long parseElement(JsonElement element) {
+    public static long parseEpochMillis(JsonElement element) {
         if (element.isJsonPrimitive()) {
             return parsePrimitive(element.getAsJsonPrimitive());
         }
@@ -44,18 +44,18 @@ public class EpochMillisAdapter implements JsonSerializer<Long>, JsonDeserialize
             JsonObject object = element.getAsJsonObject();
 
             if (object.has("$numberLong")) {
-                return parseElement(object.get("$numberLong"));
+                return parseEpochMillis(object.get("$numberLong"));
             }
 
             if (object.has("$date")) {
-                return parseElement(object.get("$date"));
+                return parseEpochMillis(object.get("$date"));
             }
         }
 
         throw new JsonParseException("Unsupported date representation: " + element);
     }
 
-    private long parsePrimitive(JsonPrimitive primitive) {
+    private static long parsePrimitive(JsonPrimitive primitive) {
         if (primitive.isNumber()) {
             return primitive.getAsLong();
         }
