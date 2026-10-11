@@ -8,6 +8,8 @@ import lombok.ToString;
 import net.hypixel.nerdbot.marmalade.format.DiscordTimestamp;
 import net.hypixel.nerdbot.marmalade.json.adapter.EpochMillisAdapter;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
 @Getter
@@ -27,6 +29,7 @@ public class NominationInfo {
     @JsonAdapter(EpochMillisAdapter.class)
     @SerializedName(value = "lastRoleRestrictedInactivityWarningTimestamp", alternate = {"lastRoleRestrictedInactivityWarningDate"})
     private Long lastRoleRestrictedInactivityWarningTimestamp = null;
+    private Map<String, Long> lastRoleRestrictedInactivityWarningTimestamps = new HashMap<>();
 
     public void increaseNominations() {
         this.totalNominations++;
@@ -77,5 +80,23 @@ public class NominationInfo {
 
     public Optional<Long> getLastRoleRestrictedInactivityWarningTimestamp() {
         return Optional.ofNullable(lastRoleRestrictedInactivityWarningTimestamp);
+    }
+
+    public void recordRoleRestrictedInactivityWarning(String groupIdentifier) {
+        increaseRoleRestrictedInactivityWarnings();
+
+        if (lastRoleRestrictedInactivityWarningTimestamps == null) {
+            lastRoleRestrictedInactivityWarningTimestamps = new HashMap<>();
+        }
+
+        lastRoleRestrictedInactivityWarningTimestamps.put(groupIdentifier, lastRoleRestrictedInactivityWarningTimestamp);
+    }
+
+    public Optional<Long> getLastRoleRestrictedInactivityWarningTimestamp(String groupIdentifier) {
+        if (lastRoleRestrictedInactivityWarningTimestamps == null) {
+            return Optional.empty();
+        }
+
+        return Optional.ofNullable(lastRoleRestrictedInactivityWarningTimestamps.get(groupIdentifier));
     }
 }
