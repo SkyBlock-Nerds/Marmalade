@@ -275,40 +275,7 @@ public abstract class Repository<T> {
     }
 
     public CompletableFuture<T> findOrCreateByIdAsync(String id, Object... parameters) {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                Result<T, RepositoryException> findResult = findById(id);
-
-                if (findResult.isSuccess()) {
-                    return findResult.orElse(null);
-                }
-
-                // Treat a database error as a hard failure rather than silently creating a duplicate
-                if (findResult instanceof Result.Failure<T, RepositoryException> failure
-                        && failure.error().getCause() instanceof MongoException) {
-                    throw new IllegalStateException("Database error while looking up ID: " + id, failure.error());
-                }
-
-                List<Class<?>> constructorParameters = new ArrayList<>();
-                for (Object param : parameters) {
-                    constructorParameters.add(param != null ? param.getClass() : Object.class);
-                }
-                T object = entityClass.getConstructor(constructorParameters.toArray(new Class[0])).newInstance(parameters);
-
-                log.debug("Created new instance of {} with parameters {}", entityClass.getSimpleName(), Arrays.toString(parameters));
-
-                cacheObject(id, object);
-                saveToDatabase(object);
-
-                return object;
-            } catch (NoSuchMethodException e) {
-                log.error("Could not find constructor for {} with parameters {}", entityClass.getSimpleName(), Arrays.toString(parameters));
-            } catch (IllegalAccessException | InstantiationException | InvocationTargetException e) {
-                log.error("Error creating new instance of {} with parameters {}", entityClass.getSimpleName(), Arrays.toString(parameters));
-            }
-
-            return null;
-        }, repositoryExecutor);
+        return CompletableFuture.supplyAsync(() -> findOrCreateById(id, parameters), repositoryExecutor);
     }
 
     public T getByIndex(int index) {
@@ -344,13 +311,12 @@ public abstract class Repository<T> {
     }
 
     public CompletableFuture<UpdateResult> saveToDatabaseAsync(T object) {
-        return CompletableFuture.supplyAsync(() -> {
-            String id = getId(object);
-            Document document = entityToDocument(object);
-            Bson updateOperation = new Document("$set", document);
+        return CompletableFuture.supplyAsync(() -> saveToDatabase(object), repositoryExecutor);
+    }
 
-            return mongoCollection.updateOne(new Document(identifierFieldName, id), updateOperation, new UpdateOptions().upsert(true));
-        }, repositoryExecutor);
+    public CompletableFuture<UpdateResult> cacheAndSaveAsync(T object) {
+        cacheObject(object);
+        return saveToDatabaseAsync(object);
     }
 
 
