@@ -7,10 +7,12 @@ import lombok.extern.slf4j.Slf4j;
 import net.hypixel.nerdbot.marmalade.format.DiscordTimestamp;
 import org.apache.commons.lang3.time.DateFormatUtils;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.ResolverStyle;
 import java.time.temporal.ChronoUnit;
@@ -70,6 +72,19 @@ public class LastActivity {
     private List<ChannelActivityEntry> channelActivityHistory = new ArrayList<>();
     private Map<String, Integer> channelActivity = new HashMap<>();
 
+    /**
+     * Messages per day ("yyyy-MM-dd" in the bot's time zone), across every channel counted in
+     * {@link #channelActivityHistory}. The monthly totals there can't say how many of a month's
+     * messages fall inside a 30-day window, so these let a window be counted exactly.
+     */
+    private Map<String, Integer> dailyMessageCount = new HashMap<>();
+
+    /**
+     * The first day {@link #dailyMessageCount} covers. Earlier days only have monthly totals. Null
+     * for records from before daily counts were kept.
+     */
+    private String dailyMessageCountSince;
+
     // Role-Restricted Channel Activity
     private Map<String, Long> roleRestrictedChannelLastActivity = new HashMap<>();
     private Map<String, List<Long>> roleRestrictedChannelMessageHistory = new HashMap<>();
@@ -104,6 +119,12 @@ public class LastActivity {
                 log.debug("Adding new channel activity entry for channel {} (ID: {})", channelName, channelId);
                 channelActivityHistory.add(new ChannelActivityEntry(channelId, channelName, amount, timestamp, new HashMap<>(Map.of(DateFormatUtils.format(timestamp, "MM-yyyy"), amount))));
             });
+
+        LocalDate day = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).toLocalDate();
+        if (dailyMessageCountSince == null) {
+            dailyMessageCountSince = day.toString();
+        }
+        dailyMessageCount.merge(day.toString(), amount, Integer::sum);
     }
 
     /**
@@ -160,8 +181,11 @@ public class LastActivity {
      * Get total message count for a role-restricted channel group within specified days
      */
     public int getRoleRestrictedChannelMessageCount(String groupIdentifier, int days) {
-        List<ChannelActivityEntry> entries = getRoleRestrictedChannelActivityHistory(groupIdentifier, days);
-        return entries.stream().mapToInt(ChannelActivityEntry::getMessageCount).sum();
+        List<Long> messages = roleRestrictedChannelMessageHistory.getOrDefault(groupIdentifier, List.of());
+        long cutoff = Instant.now().minus(Duration.ofDays(days)).toEpochMilli();
+        return (int) messages.stream()
+            .filter(timestamp -> timestamp >= cutoff)
+            .count();
     }
 
     /**
@@ -193,33 +217,127 @@ public class LastActivity {
         return filterToWindow(roleRestrictedChannelActivityHistory.getOrDefault(groupIdentifier, List.of()), days);
     }
 
+    /**
+     * Drops everything older than the window from every history. Monthly channel totals are kept,
+     * since they're also the all-time record.
+     *
+     * @return whether anything was removed
+     */
     public boolean purgeOldHistory(int daysRequiredForVoteHistory) {
-        long configuredDays = Duration.of(daysRequiredForVoteHistory, ChronoUnit.DAYS).toMillis();
-        long currentTime = System.currentTimeMillis();
+        long cutoff = System.currentTimeMillis() - Duration.ofDays(daysRequiredForVoteHistory).toMillis();
+        boolean removed = false;
 
-        return this.suggestionCreationHistory.removeIf(time -> time <= (currentTime - configuredDays)) ||
-            this.suggestionVoteHistory.removeIf(time -> time <= (currentTime - configuredDays)) ||
-            this.suggestionCommentHistory.removeIf(time -> time <= (currentTime - configuredDays)) ||
-            this.alphaSuggestionCreationHistory.removeIf(time -> time <= (currentTime - configuredDays)) ||
-            this.alphaSuggestionVoteHistory.removeIf(time -> time <= (currentTime - configuredDays)) ||
-            this.alphaSuggestionCommentHistory.removeIf(time -> time <= (currentTime - configuredDays)) ||
-            this.projectSuggestionCreationHistory.removeIf(time -> time <= (currentTime - configuredDays)) ||
-            this.projectSuggestionVoteHistory.removeIf(time -> time <= (currentTime - configuredDays)) ||
-            this.projectSuggestionCommentHistory.removeIf(time -> time <= (currentTime - configuredDays)) ||
-            this.getSuggestionVoteHistoryMap().values().removeIf(time -> time <= (currentTime - configuredDays)) ||
-            this.getAlphaSuggestionVoteHistoryMap().values().removeIf(time -> time <= (currentTime - configuredDays)) ||
-            this.getProjectSuggestionVoteHistoryMap().values().removeIf(time -> time <= (currentTime - configuredDays)) ||
-            this.roleRestrictedChannelMessageHistory.values().stream().anyMatch(messageHistory -> messageHistory.removeIf(time -> time <= (currentTime - configuredDays))) ||
-            this.roleRestrictedChannelCommentHistory.values().stream().anyMatch(commentHistory -> commentHistory.removeIf(time -> time <= (currentTime - configuredDays))) ||
-            this.roleRestrictedChannelVoteHistory.values().stream().anyMatch(voteHistory -> voteHistory.values().removeIf(time -> time <= (currentTime - configuredDays)));
+        for (List<Long> history : List.of(suggestionCreationHistory, suggestionVoteHistory, suggestionCommentHistory,
+            alphaSuggestionCreationHistory, alphaSuggestionVoteHistory, alphaSuggestionCommentHistory,
+            projectSuggestionCreationHistory, projectSuggestionVoteHistory, projectSuggestionCommentHistory)) {
+            removed |= history.removeIf(time -> time <= cutoff);
+        }
+
+        for (Map<String, Long> votes : List.of(suggestionVoteHistoryMap, alphaSuggestionVoteHistoryMap, projectSuggestionVoteHistoryMap)) {
+            removed |= votes.values().removeIf(time -> time <= cutoff);
+        }
+
+        for (List<Long> history : roleRestrictedChannelMessageHistory.values()) {
+            removed |= history.removeIf(time -> time <= cutoff);
+        }
+        for (List<Long> history : roleRestrictedChannelCommentHistory.values()) {
+            removed |= history.removeIf(time -> time <= cutoff);
+        }
+        for (Map<String, Long> votes : roleRestrictedChannelVoteHistory.values()) {
+            removed |= votes.values().removeIf(time -> time <= cutoff);
+        }
+
+        LocalDate oldestKept = Instant.ofEpochMilli(cutoff).atZone(ZoneId.systemDefault()).toLocalDate().plusDays(1);
+        removed |= dailyMessageCount.keySet().removeIf(day -> LocalDate.parse(day).isBefore(oldestKept));
+        // Days dropped from the daily counts are read from the monthly totals again
+        if (dailyMessageCountSince != null && LocalDate.parse(dailyMessageCountSince).isBefore(oldestKept)) {
+            dailyMessageCountSince = oldestKept.toString();
+        }
+
+        return removed;
     }
 
     public int getTotalMessageCount() {
         return getChannelActivityHistory().stream().mapToInt(ChannelActivityEntry::getMessageCount).sum();
     }
 
+    /** Messages in the last {@code days} days, today included. */
     public int getTotalMessageCount(int days) {
-        return getChannelActivityHistory(days).stream().mapToInt(ChannelActivityEntry::getMessageCount).sum();
+        return getTotalMessageCount(days, Clock.systemDefaultZone());
+    }
+
+    /**
+     * Days covered by {@link #dailyMessageCount} are counted exactly. Earlier days only have
+     * monthly totals, so each month's messages are spread evenly over its days and the days inside
+     * the window are counted. For the month daily counts started in, that's only the messages
+     * before they started.
+     */
+    public int getTotalMessageCount(int days, Clock clock) {
+        if (days <= 0) {
+            return 0;
+        }
+
+        LocalDate today = LocalDate.now(clock);
+        LocalDate start = today.minusDays(days - 1L);
+        LocalDate since = dailyMessageCountSince == null ? null : LocalDate.parse(dailyMessageCountSince);
+
+        int exact = 0;
+        if (since != null) {
+            LocalDate from = start.isAfter(since) ? start : since;
+            exact = dailyMessageCount.entrySet().stream()
+                .filter(day -> {
+                    LocalDate date = LocalDate.parse(day.getKey());
+                    return !date.isBefore(from) && !date.isAfter(today);
+                })
+                .mapToInt(Map.Entry::getValue)
+                .sum();
+        }
+
+        LocalDate estimatedUntil = since == null ? today : since.minusDays(1);
+        if (start.isAfter(estimatedUntil)) {
+            return exact;
+        }
+
+        double estimated = 0;
+        for (Map.Entry<YearMonth, Integer> month : monthlyTotals().entrySet()) {
+            int messages = month.getValue();
+            LocalDate monthStart = month.getKey().atDay(1);
+            LocalDate monthEnd = month.getKey().atEndOfMonth();
+
+            // In the month daily counts began, the rest of its messages came before they began
+            if (since != null && month.getKey().equals(YearMonth.from(since))) {
+                messages -= dailyCountsIn(month.getKey());
+                monthEnd = since.minusDays(1);
+            }
+
+            LocalDate overlapStart = start.isAfter(monthStart) ? start : monthStart;
+            LocalDate overlapEnd = estimatedUntil.isBefore(monthEnd) ? estimatedUntil : monthEnd;
+            if (messages > 0 && !overlapStart.isAfter(overlapEnd)) {
+                long overlapDays = ChronoUnit.DAYS.between(overlapStart, overlapEnd) + 1;
+                long monthDays = ChronoUnit.DAYS.between(monthStart, monthEnd) + 1;
+                estimated += messages * (double) overlapDays / monthDays;
+            }
+        }
+
+        return exact + (int) Math.round(estimated);
+    }
+
+    private Map<YearMonth, Integer> monthlyTotals() {
+        Map<YearMonth, Integer> totals = new HashMap<>();
+        for (ChannelActivityEntry entry : channelActivityHistory) {
+            if (entry.getMonthlyMessageCount() != null) {
+                entry.getMonthlyMessageCount().forEach((monthYear, count) ->
+                    totals.merge(YearMonth.parse(monthYear, MONTH_YEAR_FORMATTER), count, Integer::sum));
+            }
+        }
+        return totals;
+    }
+
+    private int dailyCountsIn(YearMonth month) {
+        return dailyMessageCount.entrySet().stream()
+            .filter(day -> YearMonth.from(LocalDate.parse(day.getKey())).equals(month))
+            .mapToInt(Map.Entry::getValue)
+            .sum();
     }
 
     public List<ChannelActivityEntry> getChannelActivityHistory(int days) {
