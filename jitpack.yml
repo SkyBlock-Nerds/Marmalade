@@ -1,0 +1,11 @@
+# JitPack installs whichever JDK is listed here through SDKMAN before running anything else, and
+# that install currently fails for anything newer than 8 (SDKMAN reports itself unreachable). JDK 8
+# is already on the builders, so ask for it to get past that step, then build with Temurin 25
+# downloaded from Adoptium. MAVEN_USER_HOME lives in the checkout because the wrapper's Maven has
+# failed to start from ~/.m2 on JitPack (see MinecraftImageGenerator).
+jdk:
+  - openjdk8
+install:
+  - curl -fsSL -o /tmp/jdk25.tar.gz "https://api.adoptium.net/v3/binary/latest/25/ga/linux/x64/jdk/hotspot/normal/eclipse"
+  - mkdir -p /tmp/jdk25 && tar -xzf /tmp/jdk25.tar.gz -C /tmp/jdk25 --strip-components=1
+  - bash -c 'export JAVA_HOME=/tmp/jdk25 PATH=/tmp/jdk25/bin:$PATH MAVEN_USER_HOME="$PWD/.jitpack-maven" && ./mvnw -B install -DskipTests -Deditorconfig.skip=true'
