@@ -36,8 +36,21 @@ class BirthDateAdapterTest {
     }
 
     @Test
+    void legacyMillisFromAMidnightAheadOfUtcReadAsThatDay() {
+        // 2000-04-05 00:00 in UK summer time, as written by a bot running on Europe/London
+        assertThat(read("954889200000")).isEqualTo(LocalDate.of(2000, 4, 5));
+        assertThat(read("{\"$numberLong\": \"1192662000000\"}")).isEqualTo(LocalDate.of(2007, 10, 18));
+    }
+
+    @Test
+    void legacyMillisFromAMidnightBehindUtcReadAsThatDay() {
+        // 2007-10-04 00:00 in New York (EDT)
+        assertThat(read("1191470400000")).isEqualTo(LocalDate.of(2007, 10, 4));
+    }
+
+    @Test
     void readsLegacyPre1970Millis() {
-        assertThat(read("{\"$date\": {\"$numberLong\": \"-20000000000\"}}")).isEqualTo(LocalDate.of(1969, 5, 14));
+        assertThat(read("{\"$date\": {\"$numberLong\": \"-19530000000\"}}")).isEqualTo(LocalDate.of(1969, 5, 20));
     }
 
     @Test
