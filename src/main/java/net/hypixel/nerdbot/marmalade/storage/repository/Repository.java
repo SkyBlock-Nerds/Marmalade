@@ -31,6 +31,7 @@ import java.lang.reflect.ParameterizedType;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.ConcurrentModificationException;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -309,7 +310,16 @@ public abstract class Repository<T> {
 
         List<WriteModel<Document>> updates = new ArrayList<>();
 
-        getAll().stream().map(this::entityToDocument).forEach(doc -> {
+        getAll().forEach(object -> {
+            Document doc;
+            try {
+                doc = entityToDocument(object);
+            } catch (ConcurrentModificationException exception) {
+                // Something changed it while it was being written out; the next save picks it up
+                log.warn("Skipped a document in {} that changed while it was being saved", getClass().getSimpleName(), exception);
+                return;
+            }
+
             Object idValue = doc.get(identifierFieldName);
 
             if (idValue == null) {
