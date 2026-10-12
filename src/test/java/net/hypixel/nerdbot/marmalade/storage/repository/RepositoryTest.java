@@ -5,11 +5,13 @@ import com.mongodb.client.MongoClients;
 import com.mongodb.client.result.UpdateResult;
 import net.hypixel.nerdbot.marmalade.exception.RepositoryException;
 import net.hypixel.nerdbot.marmalade.functional.Result;
+import org.bson.Document;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.ConcurrentModificationException;
 import java.util.List;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -144,11 +146,36 @@ class RepositoryTest {
         repository.getCache().cleanUp();
     }
 
+    @Test
+    void aDocumentChangingMidSaveIsSkippedRatherThanFailingTheSave() {
+        ChangingRepository repository = new ChangingRepository(mongoClient);
+        repository.cacheObject(new TestEntity("changing"));
+
+        assertThat(repository.saveAllToDatabase()).isNull();
+    }
+
     static class TestEntity {
         final String id;
 
         TestEntity(String id) {
             this.id = id;
+        }
+    }
+
+    static class ChangingRepository extends Repository<TestEntity> {
+
+        ChangingRepository(MongoClient mongoClient) {
+            super(mongoClient, "marmalade-test", "test-entities", "id", 1, TimeUnit.HOURS);
+        }
+
+        @Override
+        protected String getId(TestEntity entity) {
+            return entity.id;
+        }
+
+        @Override
+        public Document entityToDocument(Object entity) {
+            throw new ConcurrentModificationException();
         }
     }
 
