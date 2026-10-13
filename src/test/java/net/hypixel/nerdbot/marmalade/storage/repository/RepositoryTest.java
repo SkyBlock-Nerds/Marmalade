@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.util.ConcurrentModificationException;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -154,11 +155,122 @@ class RepositoryTest {
         assertThat(repository.saveAllToDatabase()).isNull();
     }
 
+    @Test
+    void inReadOnlyModeEvictionDoesNotSave() throws InterruptedException {
+        RecordingRepository repository = new RecordingRepository(mongoClient, true);
+        repository.setReadOnly(true);
+
+        repository.cacheObject(new TestEntity("read-only-eviction"));
+        expireAllEntries(repository);
+
+        assertThat(repository.saveLatch.await(300, TimeUnit.MILLISECONDS)).isFalse();
+        assertThat(repository.saved).isEmpty();
+    }
+
+    @Test
+    void inReadOnlyModeNoWriteReachesTheDatabase() {
+        try (MongoClient unreachable = fastFailingClient()) {
+            PlainRepository repository = new PlainRepository(unreachable);
+            repository.setReadOnly(true);
+            TestEntity entity = new TestEntity("read-only");
+            repository.cacheObject(entity);
+
+            assertThat(repository.saveToDatabase(entity).wasAcknowledged()).isFalse();
+            assertThat(repository.saveAllToDatabase()).isNull();
+            assertThat(repository.unsetField("read-only", "field").wasAcknowledged()).isFalse();
+            assertThat(repository.deleteFromDatabase("read-only").wasAcknowledged()).isFalse();
+            assertThat(repository.getCache().getIfPresent("read-only")).isNull();
+        }
+    }
+
+    @Test
+    void theManagerMakesEveryRepositoryReadOnly() throws RepositoryException {
+        RepositoryManager manager = new RepositoryManager();
+        manager.setReadOnly(true);
+        manager.registerRepositoriesFromPackage("net.hypixel.nerdbot.marmalade.storage.database.repository", mongoClient, "marmalade-test");
+
+        assertThat(manager.getRepositories().values()).isNotEmpty()
+            .allSatisfy(repository -> assertThat(((Repository<?>) repository).isReadOnly()).isTrue());
+
+        manager.setReadOnly(false);
+
+        assertThat(manager.getRepositories().values())
+            .allSatisfy(repository -> assertThat(((Repository<?>) repository).isReadOnly()).isFalse());
+    }
+
+    @Test
+    void aDeleteWaitsForABulkSaveAlreadyRunning() throws InterruptedException {
+        try (MongoClient unreachable = fastFailingClient()) {
+            BlockingSaveRepository repository = new BlockingSaveRepository(unreachable);
+            repository.cacheObject(new TestEntity("deleted"));
+
+            CompletableFuture<Void> save = CompletableFuture.runAsync(() -> {
+                try {
+                    repository.saveAllToDatabase();
+                } catch (RuntimeException expected) {
+                    // the database is unreachable
+                }
+            });
+            assertThat(repository.writing.await(5, TimeUnit.SECONDS)).isTrue();
+
+            CompletableFuture<?> delete = repository.deleteFromDatabaseAsync("deleted");
+            Thread.sleep(200);
+            assertThat(repository.getCache().getIfPresent("deleted")).as("the delete waits for the save").isNotNull();
+
+            repository.finishWriting.countDown();
+            save.join();
+            assertThatThrownBy(delete::join).isInstanceOf(CompletionException.class);
+            assertThat(repository.getCache().getIfPresent("deleted")).isNull();
+        }
+    }
+
+    private static MongoClient fastFailingClient() {
+        return MongoClients.create("mongodb://127.0.0.1:1/?serverSelectionTimeoutMS=100&connectTimeoutMS=100");
+    }
+
     static class TestEntity {
         final String id;
 
         TestEntity(String id) {
             this.id = id;
+        }
+    }
+
+    static class PlainRepository extends Repository<TestEntity> {
+
+        PlainRepository(MongoClient mongoClient) {
+            super(mongoClient, "marmalade-test", "test-entities", "id", 1, TimeUnit.HOURS);
+        }
+
+        @Override
+        protected String getId(TestEntity entity) {
+            return entity.id;
+        }
+    }
+
+    static class BlockingSaveRepository extends Repository<TestEntity> {
+
+        final CountDownLatch writing = new CountDownLatch(1);
+        final CountDownLatch finishWriting = new CountDownLatch(1);
+
+        BlockingSaveRepository(MongoClient mongoClient) {
+            super(mongoClient, "marmalade-test", "test-entities", "id", 1, TimeUnit.HOURS);
+        }
+
+        @Override
+        protected String getId(TestEntity entity) {
+            return entity.id;
+        }
+
+        @Override
+        public Document entityToDocument(Object entity) {
+            writing.countDown();
+            try {
+                finishWriting.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+            return new Document("id", ((TestEntity) entity).id);
         }
     }
 

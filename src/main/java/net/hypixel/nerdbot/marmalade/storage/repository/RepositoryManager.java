@@ -18,6 +18,13 @@ import java.util.Set;
 public class RepositoryManager {
 
     private final Map<Class<?>, Object> repositories = new HashMap<>();
+    private boolean readOnly;
+
+    /** Makes every repository, including ones registered later, read-only; see {@link Repository#setReadOnly}. */
+    public void setReadOnly(boolean readOnly) {
+        this.readOnly = readOnly;
+        repositories.values().forEach(repository -> ((Repository<?>) repository).setReadOnly(readOnly));
+    }
 
     @SneakyThrows
     public <T> T getRepository(Class<T> repositoryClass) {
@@ -49,6 +56,7 @@ public class RepositoryManager {
 
                 if (isRepository(clazz) && !repositories.containsKey(clazz)) {
                     Object repositoryInstance = createRepositoryInstance(clazz, mongoClient, databaseName);
+                    ((Repository<?>) repositoryInstance).setReadOnly(readOnly);
                     repositories.put(clazz, repositoryInstance);
                     log.info("Registered repository: {}", clazz.getName());
                 }

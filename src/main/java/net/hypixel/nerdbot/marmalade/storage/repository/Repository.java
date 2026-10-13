@@ -38,8 +38,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -54,6 +56,9 @@ public abstract class Repository<T> {
     private final String identifierFieldName;
     private final ExecutorService repositoryExecutor = SHARED_EXECUTOR;
     private final boolean saveOnEviction;
+    // One write at a time, so a bulk save can't write a copy older than a save or delete made while it ran
+    private final ReentrantLock writes = new ReentrantLock();
+    private volatile boolean readOnly;
     private Field field;
 
     protected Repository(MongoClient mongoClient, String databaseName, String collectionName, String identifierFieldName) {
@@ -92,7 +97,7 @@ public abstract class Repository<T> {
             .removalListener((String key, T value, RemovalCause cause) -> {
                 debug("Removing document with ID {} from cache for reason {}", key, cause);
 
-                if (saveOnEviction && cause != RemovalCause.EXPLICIT && cause != RemovalCause.REPLACED) {
+                if (saveOnEviction && !readOnly && cause != RemovalCause.EXPLICIT && cause != RemovalCause.REPLACED) {
                     saveToDatabase(value);
                 }
             })
@@ -286,12 +291,40 @@ public abstract class Repository<T> {
         cacheObject(id, object);
     }
 
-    public UpdateResult saveToDatabase(T object) {
-        String id = getId(object);
-        Document document = entityToDocument(object);
-        Bson updateOperation = new Document("$set", document);
+    /**
+     * Stops every write to the database: saves, bulk saves, deletes, field removals and eviction
+     * write-back. The cache keeps working, so a read-only copy of the bot can run against live data.
+     */
+    public void setReadOnly(boolean readOnly) {
+        this.readOnly = readOnly;
+    }
 
-        return mongoCollection.updateOne(new Document(identifierFieldName, id), updateOperation, new UpdateOptions().upsert(true));
+    public boolean isReadOnly() {
+        return readOnly;
+    }
+
+    public UpdateResult saveToDatabase(T object) {
+        if (readOnly) {
+            debug("Not saving document with ID {} in read-only mode", getId(object));
+            return UpdateResult.unacknowledged();
+        }
+
+        return locked(() -> {
+            String id = getId(object);
+            Document document = entityToDocument(object);
+            Bson updateOperation = new Document("$set", document);
+
+            return mongoCollection.updateOne(new Document(identifierFieldName, id), updateOperation, new UpdateOptions().upsert(true));
+        });
+    }
+
+    private <R> R locked(Supplier<R> write) {
+        writes.lock();
+        try {
+            return write.get();
+        } finally {
+            writes.unlock();
+        }
     }
 
     public CompletableFuture<UpdateResult> saveToDatabaseAsync(T object) {
@@ -304,8 +337,22 @@ public abstract class Repository<T> {
     }
 
 
+    /**
+     * @return the result of the bulk write, or null when there was nothing to write or the
+     * repository is read-only
+     */
     @Nullable
     public BulkWriteResult saveAllToDatabase() {
+        if (readOnly) {
+            debug("Not saving {} cached documents in read-only mode", cache.asMap().size());
+            return null;
+        }
+
+        return locked(this::writeAllCached);
+    }
+
+    @Nullable
+    private BulkWriteResult writeAllCached() {
         log("Saving all documents in cache to database (found {})", cache.asMap().size());
 
         List<WriteModel<Document>> updates = new ArrayList<>();
@@ -353,23 +400,31 @@ public abstract class Repository<T> {
      * it from Mongo.
      */
     public UpdateResult unsetField(String id, String fieldName) {
-        return mongoCollection.updateOne(Filters.eq(identifierFieldName, id), new Document("$unset", new Document(fieldName, "")));
+        if (readOnly) {
+            debug("Not removing field {} from document with ID {} in read-only mode", fieldName, id);
+            return UpdateResult.unacknowledged();
+        }
+
+        return locked(() -> mongoCollection.updateOne(Filters.eq(identifierFieldName, id), new Document("$unset", new Document(fieldName, ""))));
     }
 
+    /** Takes the document out of the cache, and out of the database unless the repository is read-only. */
     public DeleteResult deleteFromDatabase(String id) {
-        cache.invalidate(id);
-        log("Deleting document with ID {} from database", id);
+        if (readOnly) {
+            cache.invalidate(id);
+            debug("Not deleting document with ID {} from the database in read-only mode", id);
+            return DeleteResult.unacknowledged();
+        }
 
-        return mongoCollection.deleteOne(Filters.eq(identifierFieldName, id));
+        return locked(() -> {
+            cache.invalidate(id);
+            log("Deleting document with ID {} from database", id);
+            return mongoCollection.deleteOne(Filters.eq(identifierFieldName, id));
+        });
     }
 
     public CompletableFuture<DeleteResult> deleteFromDatabaseAsync(String id) {
-        return CompletableFuture.supplyAsync(() -> {
-            cache.invalidate(id);
-            log("Deleting document with ID {} from database asynchronously", id);
-
-            return mongoCollection.deleteOne(Filters.eq(identifierFieldName, id));
-        }, repositoryExecutor);
+        return CompletableFuture.supplyAsync(() -> deleteFromDatabase(id), repositoryExecutor);
     }
 
     protected String getId(T entity) {

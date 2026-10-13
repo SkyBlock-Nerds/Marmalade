@@ -8,7 +8,6 @@ import net.hypixel.nerdbot.marmalade.json.adapter.EpochMillisAdapter;
 import org.bson.codecs.pojo.annotations.BsonIgnore;
 
 import java.util.Date;
-import java.util.Timer;
 import java.util.UUID;
 
 @Getter
@@ -20,7 +19,6 @@ public class Reminder {
 
     private UUID uuid;
     @BsonIgnore
-    private transient Timer timer;
     private String description;
     private String channelId;
     private String userId;
@@ -44,17 +42,6 @@ public class Reminder {
 
     public Date getTimeAsDate() {
         return new Date(time);
-    }
-
-    public void assignTimer(Timer timer) {
-        this.timer = timer;
-    }
-
-    public void cancelTimer() {
-        if (timer != null) {
-            timer.cancel();
-            timer = null;
-        }
     }
 
     public String getCollectionName() {
